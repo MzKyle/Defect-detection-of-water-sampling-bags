@@ -1,4 +1,7 @@
-```markdown
+设备采用两个MV-CU120-10U型号的海康工业摄像头，镜头分别采用12mm与25mm，光源采用FG-ZK450400-W与FG-TH400300-W型背光板。以下是采集部分示意图，详细打光方案已整理到文件中。
+
+<img width="307" height="403" alt="image" src="https://github.com/user-attachments/assets/e1713f61-29d6-43f1-b062-70347321d9f9" />
+
 # YOLOv5 水袋检测项目
 基于 YOLOv5 实现工业场景下水袋目标的检测与分析，支持目标裁剪、区域检测、特征可视化等功能。
 
@@ -71,5 +74,3 @@ python train.py --cfg models/waterbag_model.yaml --data data/waterbag.yaml --epo
 1. **数据集**：优先用 DVC 管理，或提供外链+示例，绝对不上传原始大数据；
 2. **结构**：精简冗余目录，统一输出/脚本目录，让结构清晰可追溯；
 3. **规范**：必加 `.gitignore` 和详细 README，保证他人能一键复现，这是“好看”且实用的核心。
-
-按照这个方案整理后，你的项目会符合 GitHub 开源项目的标准，既解决了大文件传输问题，又能让代码结构清晰、易读易用。
