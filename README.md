@@ -6,6 +6,9 @@
 
 设备采用两个MV-CU120-10U型号的海康工业摄像头，光源采用FG-ZK450400-W与FG-TH400300-W型背光板。以下是采集部分示意图，打光方案已整理到项目附加文件中。
 
+
+<img width="300" height="400" alt="5f7b2509a5016620ea8dca1875969b8d" src="https://github.com/user-attachments/assets/223312eb-a75c-44e6-8f05-f024616b18fc" />
+
 ## 系统架构
 
 ```
