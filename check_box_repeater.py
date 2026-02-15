@@ -1,4 +1,4 @@
-# yolo_repeat_checker.py
+#检测是否与上一次检测的袋子的结果重复了，如果重复则可能出现玻璃板脏的情况，需要及时清洁玻璃
 
 import os
 import numpy as np
