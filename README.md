@@ -76,3 +76,15 @@ python train.py --cfg models/waterbag_model.yaml --data data/waterbag.yaml --epo
 1. **数据集**：优先用 DVC 管理，或提供外链+示例，绝对不上传原始大数据；
 2. **结构**：精简冗余目录，统一输出/脚本目录，让结构清晰可追溯；
 3. **规范**：必加 `.gitignore` 和详细 README，保证他人能一键复现，这是“好看”且实用的核心。
+
+
+主线程 (Main Thread)
+    ↓
+self.running.wait()  ← 阻塞等待停止信号
+    ↑
+监控线程1 (Observer Thread) → 监控 folder1 → 触发 handler1.on_created()
+监控线程2 (Observer Thread) → 监控 folder2 → 触发 handler2.on_created()
+    ↓
+检测线程 (Detection Threads) → 执行YOLO模型推理
+    ↓  
+控制线程 (PLC Thread) → 写入PLC寄存器

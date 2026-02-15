@@ -25,6 +25,7 @@ from filter_box import is_valid_defect
 from check_box_repeater import check_box_repeat  # 重复缺陷判定（一次或二次的结果都可用这个）
 
 app = Flask(__name__)
+#将 Flask 应用包装成支持 WebSocket 的实时应用，实现客户端与服务器的实时双向通信
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ==============================
@@ -72,7 +73,7 @@ PATCH_CONFIG = {
 # 二次检测模型（新权重）配置 —— 使用与你一次检测不同的权重
 # 直接 .pt 模型路径即可；如是加密 .enc，请把 is_encrypted 设 True 并提供 key_path
 PATCH_MODEL_CONFIG = {
-    "model_path": r"D:\code\yolov5\runs\train7\exp\weights\best.pt",  # ←← 改成你的新权重
+    "model_path": r"D:\code\yolov5\runs\train7\exp\weights\best.pt",  # ←← 改成新权重
     "key_path": r"D:\code\yolov5\runs\train7\exp\model.key",
     "yolov5_root": r"D:\code\yolov5"
 }
@@ -175,7 +176,7 @@ class YOLOModel:
                 print(f"✓ 临时文件已写入: {temp_file}")
 
                 print("[4/4] 加载YOLO模型（一次检测）...")
-                # 保留你原先的方式；如需CPU/GPU兜底可改用 self.model.to(device)
+                # 如需CPU/GPU兜底可改用 self.model.to(device)
                 self.model = YOLO(temp_file).eval().cuda()
                 if not hasattr(self.model, 'names'):
                     raise RuntimeError("加载的模型结构不完整，缺少names属性")
@@ -268,7 +269,7 @@ class YOLOModel:
                         cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 4, cv2.LINE_AA)
             cv2.putText(img_box, f"{conf:.2f}", (x1, y1),
                         cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 4, cv2.LINE_AA)
-        
+
         os.makedirs('./detect_result', exist_ok=True)
         cv2.imwrite(f'./detect_result/{base}_detect.jpg', img_box)
         return img_box, boxes, is_defect
@@ -389,7 +390,7 @@ _patch_model = None
 _primary_lock = Lock()
 _patch_lock = Lock()
 
-def get_primary_model():
+def get_primary_model(): #单例模式获取检测模型
     global _primary_model
     with _primary_lock:
         if _primary_model is None:
@@ -420,7 +421,7 @@ class CameraHandler(FileSystemEventHandler):
     def on_created(self, event):
         if self.processing or event.is_directory or not event.src_path.endswith('.jpg'):
             return
-        if time.time() - self.last_processed < CAMERA_CONFIG['cooldown']:
+        if time.time() - self.last_processed < CAMERA_CONFIG['cooldown']:       #防止短时间内重复处理
             return
         self.processing = True
         try:
@@ -461,7 +462,7 @@ class CameraHandler(FileSystemEventHandler):
         filename = os.path.basename(img_path)
         backup_path = os.path.join(backup_dir, filename)
         shutil.copy(img_path, backup_path)
-        
+
         # 2) 一次检测（旧权重）
         img_stage1, boxes_stage1, is_defect = self.model.detect(img_path)
         print("全局瑕疵检测结果（一次）：", is_defect)
@@ -487,7 +488,7 @@ class CameraHandler(FileSystemEventHandler):
             else:
                 print(f"二次网格检测未发现异常，耗时 {time.time()-t_patch_start:.2f}s")
 
-        # 4) 重复缺陷判定：优先二次结果，否则用一次
+        # 4) 重复缺陷判定：优先二次结果，否则用一次，最后检查是否为重复缺陷，重复可能是玻璃板上的污点或划痕等非生产缺陷
         boxes_for_repeat = boxes_stage2 if len(boxes_stage2) > 0 else boxes_stage1
         repeat_final = check_box_repeat(boxes_for_repeat)
         print("是否为重复缺陷：", repeat_final)
