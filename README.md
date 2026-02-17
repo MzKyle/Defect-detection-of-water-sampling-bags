@@ -111,6 +111,7 @@ PLC_CONFIG = {
 6.**重新训练模型**
 
 给出训练命令示例，根据需要调整参数
+yolov5训练命令
 ```bash
 python train.py \
   --weights '' \                # 无初始权重
