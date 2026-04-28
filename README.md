@@ -2,9 +2,13 @@
 
 > Open-source industrial vision demo for water sampling bag inspection
 
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](#快速开始)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-A42E2B.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-available-0A66C2?logo=readthedocs&logoColor=white)](docs/README.md)
+[![Pipeline](https://img.shields.io/badge/pipeline-perception--decision--actuation-2E8B57)](docs/architecture/README.md)
+
 Waterbag Inspection 是一个面向工业水样采集袋缺陷检测场景的开源演示项目。它不是单纯展示某个 YOLO 模型，而是把一条完整的感知-决策-执行链路整理成了可运行、可复现、可扩展的工程样板。
 
-这个仓库来自一个更早期的真实产线视觉项目，后续围绕工程化做了持续重构。当前版本更适合被理解为一个小型工业视觉闭环系统：
 
 - 双相机输入
 - 一次整图检测 + 二次网格复检
@@ -17,9 +21,10 @@ Waterbag Inspection 是一个面向工业水样采集袋缺陷检测场景的开
 
 如果你做的是机器人、视觉、工业软件或传感链路相关工作，这个项目更像一个“感知数据进入算法、算法结果驱动执行控制”的 demo，而不只是一个训练脚本集合。
 
+[Quick Start](#快速开始) · [Docs](docs/README.md) · [Architecture](docs/architecture/README.md) · [Fault Injection](docs/workflow/fault-injection.md) · [Contributing](CONTRIBUTING.md)
+
 ## 为什么开源这个项目
 
-- 它保留了一个真实工业视觉项目从“学生作品”走向“工程化重构”的过程
 - 它可以在没有真实相机、真实 PLC、真实模型权重的情况下完整演示链路行为
 - 它把在线运行、历史回放、故障注入和真实部署统一到同一套 pipeline 和数据模型里
 - 它适合作为工业视觉、机器人数据链路、感知执行闭环相关方向的学习和展示样板
@@ -35,6 +40,24 @@ Waterbag Inspection 是一个面向工业水样采集袋缺陷检测场景的开
 - Web 观测面板，展示 `timeout / ack_retry / stale_frame / plc_failure`
 - CLI 支持 `serve`、`seed-demo`、`inspect`、`replay`、`inject-faults`
 - SQLite 留档、指标聚合、历史回放和离线故障注入
+
+## 架构速览
+
+```mermaid
+graph LR
+    CAM["Camera / Replay / Upload"] --> RT["Runtime / Queue"]
+    RT --> PIPE["InspectionPipeline"]
+    PIPE --> DET["Detector Backend"]
+    PIPE --> COR["BagCorrelator"]
+    PIPE --> REP["Repeat Tracker"]
+    PIPE --> POL["Decision Policy"]
+    POL --> PLC["PLC / Mock Controller"]
+    PIPE --> DB["SQLite Repository"]
+    DB --> WEB["Web Dashboard / API"]
+    PIPE --> WEB
+```
+
+这条链路的核心目标不是“单张图有没有检出框”，而是把输入、感知、聚合、决策、控制、反馈和留档串成一条可观测、可回放、可验证的工业视觉闭环。
 
 ## 快速开始
 
@@ -105,20 +128,14 @@ make test
 
 README 只保留开源首页需要的内容。更完整的项目说明、架构分析、算法细节、部署流程和接口文档都放在 [`docs/`](docs) 中。
 
-建议从这些入口开始：
+推荐按下面的路径进入：
 
-- [文档首页](docs/README.md)
-- [环境依赖与安装](docs/guide/prerequisites.md)
-- [启动 Demo](docs/guide/run-demo.md)
-- [系统架构总览](docs/architecture/README.md)
-- [模块全景](docs/architecture/module-overview.md)
-- [数据流](docs/architecture/data-flow.md)
-- [二阶段缺陷检测](docs/algorithms/two-stage-detection.md)
-- [袋体级多相机关联](docs/algorithms/bag-correlation.md)
-- [重复缺陷识别](docs/algorithms/repeat-defect.md)
-- [YOLOv8 / YOLO11 选型](docs/algorithms/model-selection.md)
-- [Web API](docs/interfaces/web-api.md)
-- [故障注入流程](docs/workflow/fault-injection.md)
+- 想先快速跑起来： [文档首页](docs/README.md) / [环境依赖与安装](docs/guide/prerequisites.md) / [启动 Demo](docs/guide/run-demo.md)
+- 想理解系统怎么设计： [系统架构总览](docs/architecture/README.md) / [模块全景](docs/architecture/module-overview.md) / [数据流](docs/architecture/data-flow.md)
+- 想看核心算法设计： [二阶段缺陷检测](docs/algorithms/two-stage-detection.md) / [袋体级多相机关联](docs/algorithms/bag-correlation.md) / [重复缺陷识别](docs/algorithms/repeat-defect.md)
+- 想看模型训练与选型： [YOLOv8 / YOLO11 选型](docs/algorithms/model-selection.md)
+- 想接外部系统或页面： [Web API](docs/interfaces/web-api.md)
+- 想验证边界场景： [故障注入流程](docs/workflow/fault-injection.md) / [部署流程](docs/workflow/deployment-workflow.md)
 
 如果你想本地打开文档站：
 
@@ -157,6 +174,16 @@ http://127.0.0.1:5173
 - 想学习如何把检测模型接到回放、控制、观测和故障验证链路里
 - 想把自己的视觉项目包装成更适合简历、开源和面试讲述的工程项目
 
+## Demo 能展示什么
+
+- 双相机正常到齐后整袋 `accept`
+- 单侧缺陷命中后整袋立即 `reject`
+- 一次整图未命中但二次 patch 复检命中微小缺陷
+- 重复缺陷触发 `repeat_alert`
+- 单侧缺失触发 `timeout`
+- PLC Ack 首次失败后自动重试
+- 旧帧迟到被识别为 `stale_frame_ignored`
+
 ## 当前范围与说明
 
 - 仓库默认不附带真实生产权重
@@ -184,11 +211,15 @@ http://127.0.0.1:5173
 - 增加更多故障注入场景和测试覆盖
 - 优化模型训练、部署导出和推理后端适配
 
+如果你准备提交改动，建议先看 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+
 ## 许可证
 
 本仓库使用 [`LICENSE`](LICENSE) 中提供的 `AGPL-3.0` 许可证。
 
 如果你计划将本项目用于网络服务、闭源系统或商业场景，请先确认许可证要求。
+
 
 ## 致谢
 
