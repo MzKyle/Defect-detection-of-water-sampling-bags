@@ -19,8 +19,6 @@ Waterbag Inspection 是一个面向工业水样采集袋缺陷检测场景的开
 - SQLite 留档、历史回放和故障注入验证
 - YOLOv8 / YOLO11 训练与 benchmark 选型入口
 
-如果你做的是机器人、视觉、工业软件或传感链路相关工作，这个项目更像一个“感知数据进入算法、算法结果驱动执行控制”的 demo，而不只是一个训练脚本集合。
-
 [Quick Start](#快速开始) · [Docs](docs/README.md) · [Architecture](docs/architecture/README.md) · [Fault Injection](docs/workflow/fault-injection.md) · [Contributing](CONTRIBUTING.md)
 
 ## 为什么开源这个项目
