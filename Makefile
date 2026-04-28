@@ -1,8 +1,9 @@
 PYTHON ?= python
 DATA ?= data/waterbag.yaml
 DEVICE ?= 0
+DOCS_PORT ?= 5173
 
-.PHONY: install-demo install-full serve-demo seed-demo replay-demo inject-faults inject-timeout inject-ack-retry inject-out-of-order train-yolov8 train-yolo11 benchmark-models test smoke
+.PHONY: install-demo install-full serve-demo serve-docs seed-demo replay-demo inject-faults inject-timeout inject-ack-retry inject-out-of-order train-yolov8 train-yolo11 benchmark-models test smoke
 
 install-demo:
 	$(PYTHON) -m pip install -r requirements-demo.txt
@@ -12,6 +13,9 @@ install-full:
 
 serve-demo:
 	$(PYTHON) -m waterbag_inspection serve --config configs/demo.yaml
+
+serve-docs:
+	$(PYTHON) -m http.server $(DOCS_PORT) -d docs
 
 seed-demo:
 	$(PYTHON) -m waterbag_inspection seed-demo --output-root demo_data --clean

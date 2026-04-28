@@ -1,0 +1,128 @@
+# Demo 配置
+
+默认配置：
+
+```text
+configs/demo.yaml
+```
+
+## app
+
+```yaml
+app:
+  name: Waterbag Inspection Demo
+  host: 0.0.0.0
+  port: 5000
+  auto_start: true
+  open_browser: false
+  browser_url: http://127.0.0.1:5000
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `name` | Web 页面标题 |
+| `host` | Flask 监听地址 |
+| `port` | Flask 端口 |
+| `auto_start` | 服务启动后是否自动开始监听相机目录 |
+| `open_browser` | 是否自动打开浏览器 |
+| `browser_url` | 自动打开的地址 |
+
+## cameras
+
+```yaml
+cameras:
+  - id: 1
+    name: A面相机
+    watch_dir: demo_data/camera1
+  - id: 2
+    name: B面相机
+    watch_dir: demo_data/camera2
+```
+
+`watch_dir` 可以是相对路径或绝对路径。相对路径会按项目根目录解析。
+
+## models
+
+Demo 默认使用 mock 检测器：
+
+```yaml
+models:
+  primary:
+    backend: mock
+    device: cpu
+    conf_thres: 0.3
+    iou_thres: 0.3
+  patch:
+    backend: mock
+    device: cpu
+    conf_thres: 0.2
+    iou_thres: 0.3
+```
+
+mock 检测器不加载权重，而是根据文件名关键词模拟缺陷。
+
+## patch_detection
+
+```yaml
+patch_detection:
+  enabled: true
+  horizontal: 4
+  vertical: 5
+  conf_thres: 0.2
+  iou_thres: 0.3
+  save_visualizations: false
+  visualization_dir: artifacts/patch_vis
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `enabled` | 是否启用 Stage 2 |
+| `horizontal` | 横向 patch 数 |
+| `vertical` | 纵向 patch 数 |
+| `save_visualizations` | 是否保存 patch 可视化 |
+
+## plc
+
+Demo 默认 mock PLC：
+
+```yaml
+plc:
+  backend: mock
+  enabled: true
+  ack_timeout_ms: 200
+  max_retries: 1
+  retry_interval_ms: 50
+  mock_ack_latency_ms: 0
+  mock_fail_first_attempts: 0
+```
+
+如果要演示 Ack retry，可以将 `mock_fail_first_attempts` 设置为 `1` 或通过故障注入命令运行。
+
+## correlation
+
+```yaml
+correlation:
+  enabled: true
+  expected_camera_ids: [1, 2]
+  hold_non_defect_until_complete: true
+  pending_timeout_ms: 1500
+  timeout_action: reject
+  finalized_retention_ms: 5000
+```
+
+Demo 中，正常袋体需要等双相机到齐才会放行。
+
+## runtime
+
+```yaml
+runtime:
+  backup_dir: artifacts/backups
+  result_dir: artifacts/results
+  upload_dir: artifacts/uploads
+  cooldown_seconds: 0.3
+  file_ready_timeout_seconds: 5.0
+  file_stable_seconds: 0.3
+  queue_poll_interval_seconds: 0.2
+```
+
+这些参数决定目录监听和 worker 处理节奏。
