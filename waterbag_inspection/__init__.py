@@ -1,0 +1,2 @@
+"""Waterbag inspection demo package."""
+

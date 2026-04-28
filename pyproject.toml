@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=70.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "waterbag-inspection-demo"
+version = "0.1.0"
+description = "Industrial waterbag inspection demo and refactoring scaffold"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "Flask>=3.0.0",
+  "Flask-SocketIO>=5.3.6",
+  "PyYAML>=6.0.1",
+  "watchdog>=4.0.0",
+  "opencv-python-headless>=4.9.0.80",
+]
+
+[project.scripts]
+waterbag-inspection = "waterbag_inspection.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

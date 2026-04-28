@@ -1,0 +1,14 @@
+.git
+__pycache__
+.pytest_cache
+artifacts
+demo_data/camera1
+demo_data/camera2
+runs
+outputs
+detect_result
+patch_vis
+*.pt
+*.pth
+*.enc
+*.key

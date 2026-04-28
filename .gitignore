@@ -3,8 +3,10 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
 
 # 数据集（关键：忽略原始数据）
+datasets/
 data/dataset/
 data/images/
 data/labels/
@@ -16,13 +18,26 @@ cropped_results/
 detect_result/
 patch_vis/
 upper_detect_result/
+artifacts/*
+!artifacts/.gitkeep
+demo_data/camera1/*
+!demo_data/camera1/.gitkeep
+demo_data/camera2/*
+!demo_data/camera2/.gitkeep
 
 # 模型权重（可选，大权重放 DVC/外链）
 *.pt
 *.pth
+*.onnx
+*.engine
+*.torchscript
+*.mlpackage
+*.enc
+*.key
 
 # 系统缓存
 .DS_Store
 *.log
 .idea/
 .vscode/
+.ruff_cache/

@@ -1,331 +1,531 @@
-# 工业水样采集袋缺陷检测系统
+# Waterbag Inspection Demo
 
-## 项目概述
+一个面向工业水样采集袋缺陷检测场景的开源演示项目。
 
-这是一个基于YOLOv5/YOLOv8的工业水样采集袋缺陷检测系统，专门用于检测水样检测袋的正反面缺陷。系统集成了文件监控、Web界面、WebSocket实时通信和PLC控制等功能，实现了完整的工业自动化检测流程。本项目旨在利用视觉自动检测装置代替人工检测水样采集袋的缺陷问题。
+这个仓库最初来自一套学生时期完成的产线视觉项目，后续逐步重构成了更适合继续维护、演示和工程化扩展的版本。当前版本的重点不是单独展示某个 YOLO 模型，而是把一条完整的工业视觉链路整理清楚：
 
-设备采用两个MV-CU120-10U型号的海康工业摄像头，光源采用FG-ZK450400-W与FG-TH400300-W型背光板。以下是采集部分示意图，打光方案已整理到项目附加文件中。
+- 双相机输入
+- 一次整图检测 + 二次网格复检
+- 多相机袋体级关联
+- 重复缺陷识别
+- PLC 控制命令下发与 Ack/重试
+- Web 实时展示
+- 结果留档、回放和故障注入
+- YOLOv8 / YOLO11 训练与模型选型基准入口
 
-<img width="300" height="403" alt="5f7b2509a5016620ea8dca1875969b8d" src="https://github.com/user-attachments/assets/9d035640-ed79-42a2-97fd-8c3322cd202d" />
+如果你做的是机器人、视觉、工业软件、感知数据链路相关工作，这个仓库更适合被理解成一个“小型感知-决策-执行闭环系统”，而不只是一个目标检测训练脚本集合。
 
+## 项目定位
 
-## 系统架构
+这个仓库当前有三个明确目标：
 
-```
-├── 文件监控系统 (Watchdog)
-├── Flask Web前端
-├── WebSocket实时通信
-├── YOLOv5/v8双模型检测
-├── 海康威视双摄像头
-└── PLC通信模块
-```
+1. 可演示  
+   没有真实相机、真实 PLC、真实权重，也可以完整演示链路行为。
 
+2. 可复现  
+   入口、配置、目录结构、测试和最小依赖都尽量统一。
 
-## 项目文件结构
+3. 可扩展  
+   demo、回放、故障注入、真实部署共用同一套 pipeline 和数据模型。
 
-```
-yolov5/
-├── app.py                 # 主应用程序（核心检测系统）
-|—— db.py                    # 数据库操作模块
-|—— filter_box.py              # 缺陷筛选模块
-|—— check_box_repeater.py      # 判断是否与上一次检测的袋子的结果重复（判断是否清洁玻璃）
-|——check_box_repeater_second.py  # 判断正反面是不是同一个缺陷
-├── crypt/
-│   ├── legacy_encrypt.py      # 模型加密脚本，多个历史模型序加密时用
-│   ├── weight_crypto.py       # 模型加密脚本，训练完成后自动加密处理
-|—— Dataset splitting.py        # 数据集划分脚本，将数据集划分为训练集和验证集
-|—— Dataset splitting_2.py      # 数据集划分脚本，将分块后的小图片数据集划分为训练集和验证集
-│—— detect/                    #yolov5训练验证检测模型
-│   ├── detect.py
-|   |——train.py
-|   |——val.py
-|   |——hyp.scratch.yaml
-|——hubconf.py                  # yolo模型配置文件
-|—— train_v8.py                 #yolov8训练验证检测模型
-|—— export.py                  # yolo模型导出脚本
-|—— hubconf.py                 # yolo模型配置文件
-|—— utils.py                  # 工具函数模块
-├── test_SingleImg.py          # 单图检测测试
-├── test_MultiImg.py           # 批量检测测试
-├── data/waterbag.yaml         # 数据集配置文件
-├── runs/train/                # 训练结果目录
-│   ├── exp6/weights/          # 一次检测模型权重
-│   └── exp7/weights/          # 二次检测模型权重
-├── templates/                 # Web界面模板
-│   └── index.html            # 主控制界面
-└── detect_result/            # 检测结果保存目录
-```
+## 核心特性
 
-## 安装和配置
+- `FramePacket -> PerceptionResult -> DecisionResult -> ControlCommand -> ExecutionFeedback` 标准化链路建模
+- `BagSummary` 多相机袋体级结果聚合
+- `pending_timeout_ms` 驱动的袋体等待超时淘汰
+- 同机位乱序旧帧忽略，避免状态回滚
+- PLC Ack/超时/重试机制
+- `runtime / replay / manual` 来源隔离的重复缺陷状态
+- Web 观测面板，展示 timeout / ack retry / stale frame / plc failure
+- CLI 支持 `serve`、`seed-demo`、`inspect`、`replay`、`inject-faults`
+- SQLite 留档、历史回放和故障注入
+
+## 仓库说明
+
+这个仓库看起来会比一般 demo 大一些，因为它保留了两部分内容：
+
+### 1. 当前推荐维护的应用层代码
+
+主代码集中在 [`waterbag_inspection/`](waterbag_inspection)：
+
+- [`config.py`](waterbag_inspection/config.py)：YAML 配置加载
+- [`schemas.py`](waterbag_inspection/schemas.py)：链路数据模型
+- [`pipeline.py`](waterbag_inspection/pipeline.py)：检测与控制主流程
+- [`correlation.py`](waterbag_inspection/correlation.py)：袋体级多相机关联
+- [`policy.py`](waterbag_inspection/policy.py)：决策与控制策略
+- [`plc.py`](waterbag_inspection/plc.py)：PLC/mock 执行层
+- [`repeater.py`](waterbag_inspection/repeater.py)：重复缺陷判定
+- [`replay.py`](waterbag_inspection/replay.py)：历史回放
+- [`fault_injection.py`](waterbag_inspection/fault_injection.py)：故障注入
+- [`storage.py`](waterbag_inspection/storage.py)：SQLite 留档与统计
+- [`service.py`](waterbag_inspection/service.py)：目录监听与 worker
+- [`webapp.py`](waterbag_inspection/webapp.py)：Flask + Socket.IO 页面/API
+- [`cli.py`](waterbag_inspection/cli.py)：命令行入口
+
+### 2. 保留的原始训练/推理资产
+
+仓库中还保留了较多 YOLO 生态相关目录，例如：
+
+- [`detect/`](detect)
+- [`models/`](models)
+- [`utils/`](utils)
+- [`classify/`](classify)
+- [`segment/`](segment)
+- [`train_ultralytics.py`](train_ultralytics.py)
+- [`train_v8.py`](train_v8.py)
+- [`train_yolo11.py`](train_yolo11.py)
+- [`benchmark_ultralytics_models.py`](benchmark_ultralytics_models.py)
+
+其中 YOLOv5 相关目录主要用于保留原始训练、验证、导出和历史兼容能力；当前推荐用 Ultralytics 统一 API 训练 YOLOv8 / YOLO11，并通过 benchmark 结果做模型选型。它们不是当前 demo Web 链路的主要入口，但可以为真实部署权重提供来源。
+
+### 3. 已归档的旧脚本
+
+重构前的实验脚本和旧页面已经归档到 [`legacy/`](legacy)：
+
+- [`legacy/scripts/`](legacy/scripts)
+- [`legacy/web_pages/`](legacy/web_pages)
+- [`legacy/state/`](legacy/state)
+
+如果你只是想运行或理解当前系统，请优先看 `waterbag_inspection/` 和 `configs/`，可以先忽略 `legacy/` 和原始 YOLO 目录。
+
+## 快速开始
 
 ### 环境要求
-```bash
-# 核心依赖
-Python 3.8+
-PyTorch 1.7+
-Flask 2.0+
-OpenCV 4.0+
 
-# 完整依赖列表见 requirements.txt
+- Python `>= 3.10`
+
+### 安装最小演示依赖
+
+```bash
+pip install -r requirements-demo.txt
 ```
 
-### 安装步骤
+如果你希望做更完整的本地验证，包括真实模型、加密权重、Modbus 和训练相关依赖，可以安装：
 
-1. **克隆项目**
-```bash
-git clone <repository-url>
-cd Defect_detection
-```
-
-2. **安装依赖**
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **配置摄像头路径**
-修改 `app.py` 中的摄像头文件夹配置：
-```python
-CAMERA_CONFIG = {
-    "folder1": r"D:\MVS\data\MV-CU120-10UC (DA5594458)",
-    "folder2": r"D:\MVS\data\MV-CU120-10UC (DA4792752)",
-    # ... 其他配置
-}
-```
+### 启动 demo
 
-4. **配置模型路径**
-```python
-MODEL_CONFIG = {
-    "encrypted_path": r"path\to\best.enc",
-    "key_path": r"path\to\model.key"
-}
-```
-
-5. **配置PLC通信**
-```python
-PLC_CONFIG = {
-    "port": "COM4",
-    "baudrate": 115200,
-    # ... 其他串口配置
-}
-```
-6.**重新训练模型**
-
-给出训练命令示例，根据需要调整参数
-yolov5训练命令
 ```bash
-python train.py \
-  --weights '' \                # 无初始权重
-  --cfg models/yolov5s.yaml \   # 模型配置文件（根据你的模型选择）
-  --hyp Defect_detection/detect/hyp.scratch.yaml \  # 指定你的超参数文件路径
-  --data Defect_detection/detect/data.yaml \        # 数据集配置文件（需提前准备）
-  --epochs 100 \                # 训练轮数
-  --batch-size 32 \             # 批次大小
-  --device 0 \                  # GPU编号（CPU用cpu）
-  --project Defect_detection/runs/train \           # 训练结果保存路径
-  --name zero_train_hyp \       # 实验名称
-  --exist-ok                    # 允许覆盖已有实验目录
+python -m waterbag_inspection seed-demo --output-root demo_data --clean
+python app.py
 ```
 
-yolov8去改train_v8.py中的参数然后运行
-```
-yolo detect train \
-  model=yolov8s.yaml \          # 模型配置（从0训练需指定yaml，而非预训练权重）
-  data=Defect_detection/detect/data.yaml \          # 数据集配置
-  hyp=Defect_detection/detect/hyp.scratch.yaml \    # 超参数文件路径
-  epochs=100 \
-  batch=32 \
-  device=0 \
-  pretrained=False \            # 核心：禁用预训练（从0训练）
-  project=Defect_detection/runs/train \
-  name=zero_train_hyp
+或者显式走 CLI：
+
+```bash
+python -m waterbag_inspection serve --config configs/demo.yaml
 ```
 
+默认访问地址：
 
+```text
+http://127.0.0.1:5000
+```
 
-## 使用说明
+## 3 分钟演示流程
 
-### 启动系统
+### 1. 生成演示样本
 
-1. **命令行启动**
+```bash
+python -m waterbag_inspection seed-demo --output-root demo_data --clean
+```
+
+这会生成一批配对样本：
+
+- `bag_0001_cam1_good.jpg` + `bag_0001_cam2_good.jpg`
+  双相机都正常，第二张到达后整袋放行
+- `bag_0002_cam1_defect_primary.jpg` + `bag_0002_cam2_good.jpg`
+  一侧一次检测命中异常，整袋立即判退
+- `bag_0003_cam1_defect_primary.jpg` + `bag_0003_cam2_good.jpg`
+  复现重复缺陷场景
+- `bag_0004_cam1_good.jpg` + `bag_0004_cam2_micro_patch.jpg`
+  一次检测通过，二次网格复检命中微小缺陷
+
+### 2. 启动 Web 服务
+
 ```bash
 python app.py
 ```
 
-2. **自动功能**
-- 系统启动后自动打开浏览器 (http://127.0.0.1:5000)
-- 自动开始监控摄像头文件夹
-- 实时检测并显示结果
+### 3. 观察页面
 
-### Web界面操作
+页面除了显示最近图像和判定结果，还会展示链路异常观测信息：
 
-1. **主控制面板**
-- 查看实时检测状态
-- 启动/停止检测系统
-- 查看历史检测记录
+- `Timeout Bags`
+- `Ack Retries`
+- `Stale Frames`
+- `Ack Failures`
+- `Avg Ack Attempts`
+- `Avg Control Latency`
+- `Recent Fault Signals`
 
-2. **实时监控**
-- 摄像头1/2检测状态
-- 缺陷统计信息
-- 系统运行日志
+## CLI 命令
 
-### 检测流程
+### 启动服务
 
-1. **图像采集**: 摄像头实时采集水样袋图像
-2. **文件监控**: 系统监控新图像文件创建
-3. **一次检测**: 快速判断是否有缺陷
-4. **二次检测**: 对疑似缺陷进行精细分析
-5. **结果输出**: 通过PLC控制生产线
-6. **数据记录**: 保存检测结果到数据库
+```bash
+python -m waterbag_inspection serve --config configs/demo.yaml
+```
 
+### 单图烟测
 
-## 核心功能
+```bash
+python -m waterbag_inspection inspect \
+  --config configs/demo.yaml \
+  --camera-id 1 \
+  --image demo_data/camera1/bag_0003_cam1_defect_primary.jpg \
+  --reset-history
+```
 
-### 1. 双摄像头检测系统
-- **摄像头1**: 检测水样采集袋正面
-- **摄像头2**: 检测水样采集袋反面
-- **数据流**: 实时图像采集 → 文件系统监控 → 自动检测
+### 历史回放
 
-### 2. 双重模型检测策略
-- **一次检测模型**: 快速粗检测，筛选正常/异常样本，直接完整的水样采集袋进行yolo模型检测（此次模型权重针对完整图片进行）。
-- **二次检测模型**: 精细网格检测，将一次检测为正常的水样采集袋图分割为小图，二次yolo模型检测（此次模型权重针对小块图片训练得到）。
-- **检测流程**: 大图检测 → 异常样本直接警报 → 正常样本分割小图再检测，二次确认是否真的没有问题。
->假阳性（False Positive）是指系统错误地将正常的水样采集袋判断为异常，而假阴性（False Negative）是指系统错误地将异常的水样采集袋判断为正常。因为水样采集袋瑕疵的概率在3%以内，考虑各方面需求针对本项目而言，假阴性的危害远大于假阳性，因此对正常样例采用严格审查。
+```bash
+python -m waterbag_inspection replay \
+  --config configs/demo.yaml \
+  --source-root demo_data \
+  --limit 4 \
+  --reset-history
+```
 
-### 3. 实时Web监控界面
-- **框架**: Flask + SocketIO
-- **功能**: 实时显示检测结果、系统状态、历史记录
-- **通信**: WebSocket实现实时数据推送
+### 故障注入
 
-### 4. PLC工业控制集成
-- **通信协议**: Modbus RTU
-- **控制功能**: 生产线启停、报警输出、状态反馈
-- **端口**: COM4, 115200波特率
+```bash
+python -m waterbag_inspection inject-faults \
+  --config configs/demo.yaml \
+  --scenario all \
+  --output-root artifacts/fault_injection \
+  --clean
+```
 
+也可以只跑某一类故障：
 
-## 核心组件详解
+```bash
+python -m waterbag_inspection inject-faults --scenario timeout
+python -m waterbag_inspection inject-faults --scenario ack-retry
+python -m waterbag_inspection inject-faults --scenario out-of-order
+```
 
-### 1. 文件监控系统 (Watchdog)
+三类故障对应：
 
-**功能特点**:
-- 实时监控两个摄像头文件夹
-- 文件创建事件触发检测
-- 冷却时间机制防止重复处理
-- 自动备份处理过的图像
+- `timeout`
+  只送入同袋体单侧相机数据，等待超时后输出 `超时 -> reject -> Ack`
+- `ack-retry`
+  mock PLC 首次 Ack 失败，验证重试路径
+- `out-of-order`
+  先送新帧、后送旧帧，验证旧帧被忽略而不会回滚袋体状态
 
-### 2. Flask Web前端
+## Makefile
 
-**Web功能**:
-- 系统启动/停止控制
-- 实时检测结果显示
-- 历史记录查询
-- 系统状态监控
+常用命令已经封装：
 
-### 3. WebSocket实时通信
+```bash
+make install-demo
+make install-full
+make seed-demo
+make serve-demo
+make replay-demo
+make inject-faults
+make inject-timeout
+make inject-ack-retry
+make inject-out-of-order
+make train-yolov8
+make train-yolo11
+make benchmark-models
+make smoke
+make test
+```
 
-**实时功能**:
-- 检测结果即时推送
-- 系统状态实时更新
-- 异常报警通知
-- 用户操作反馈
+## 配置
 
-### 4. 双重模型检测引擎
+### Demo 配置
 
-#### 一次检测（整图快速筛选）
-模型1用整图训练，快速筛选出异常样本的能力，但可能存在有极小的污点发现不了的情况
+默认使用 [`configs/demo.yaml`](configs/demo.yaml)。
 
-#### 二次检测（小块精细分析）
-模型2用小块图训练，针对一次检测为正常的样例进行更细致的检查，进一步确认是否真的没有问题。减少假阳例的情况。
+特点：
 
-### 5. PLC通信模块
+- `mock` 检测器
+- `mock` PLC
+- 本地 `demo_data/camera1` / `demo_data/camera2`
+- SQLite 留档
+- 默认开启袋体级关联、超时淘汰和重复缺陷状态隔离
 
+mock 检测规则：
 
+- 文件名包含 `defect` / `ng` / `abnormal` / `anomaly`
+  模拟一次检测命中
+- 文件名包含 `patch` / `micro` / `tiny` / `pinhole`
+  模拟二次网格检测命中
 
-**PLC控制功能**:
-- 摄像头1检测结果输出 (寄存器100)
-- 摄像头2检测结果输出 (寄存器102)  
-- 重复缺陷报警输出 (寄存器104)
-- 生产线控制信号
+### 生产配置模板
 
+真实部署时可以参考 [`configs/production.example.yaml`](configs/production.example.yaml)。
 
+需要按实际环境修改：
 
+- 相机目录
+- 模型权重路径或加密权重路径，可来自 YOLOv8 / YOLO11 训练结果
+- PLC 串口参数
+- 重复缺陷历史路径
+- 可视化与结果输出目录
 
-## 技术特点
+## 模型训练与选型
 
-### 1. 高性能检测
-- **双重模型策略**: 兼顾检测速度和精度
-- **GPU加速**: 利用CUDA进行快速推理
-- **并行处理**: 多线程处理不同摄像头数据
+当前项目建议把 YOLOv5 作为 legacy baseline 保留，把 YOLOv8 作为稳定基线，把 YOLO11 作为升级候选。是否升级不靠“版本更新”本身决定，而靠同一数据集上的精度、漏检/误检、端侧时延和模型体积决定。
 
-### 2. 工业级可靠性
-- **自动恢复机制**: 系统异常时自动重启
-- **错误处理**: 完善的异常捕获和处理
-- **日志记录**: 详细的运行日志记录
+### 数据集配置
 
-### 3. 安全保护
-- **模型加密**: 使用Fernet加密保护模型权重
-- **访问控制**: Web界面权限管理
-- **数据备份**: 自动备份重要数据
+默认数据集配置在 [`data/waterbag.yaml`](data/waterbag.yaml)。推荐把真实数据放在：
 
-### 4. 可扩展性
-- **模块化设计**: 各功能模块独立，易于维护
-- **配置驱动**: 通过配置文件调整系统参数
-- **接口标准化**: 便于集成其他工业设备
+```text
+datasets/waterbag/
+├── images/
+│   ├── train/
+│   └── val/
+└── labels/
+    ├── train/
+    └── val/
+```
 
-## 故障排除
+如果你的数据集在其他位置，可以复制一份 YAML，或在命令中通过 `--data` 指向自己的配置文件。
 
-### 常见问题
+### 训练 YOLOv8 基线
 
-1. **摄像头连接失败**
-   - 检查摄像头电源和网络连接
-   - 确认MVS软件正常运行
+```bash
+python train_v8.py --data data/waterbag.yaml --device 0
+```
 
-2. **PLC通信异常**
-   - 检查COM端口配置
-   - 确认波特率等参数匹配
-   - 检查PLC设备状态
+也可以通过 Makefile：
 
-3. **模型加载失败**
-   - 确认模型文件路径正确
-   - 检查密钥文件完整性
-   - 验证CUDA环境配置
+```bash
+make train-yolov8 DATA=data/waterbag.yaml DEVICE=0
+```
 
-### 日志查看
-系统运行日志保存在 `logs/` 目录下，包含详细的运行信息。
+### 训练 YOLO11 候选模型
 
-## 开发指南
+```bash
+python train_yolo11.py --data data/waterbag.yaml --device 0
+```
 
-### 代码结构说明
+也可以通过 Makefile：
 
-- **app.py**: 主应用程序，包含所有核心功能
-- **模型管理**: 使用单例模式确保模型只加载一次
-- **线程安全**: 使用锁机制保证多线程安全
-- **事件驱动**: 基于文件系统事件的自动检测触发
+```bash
+make train-yolo11 DATA=data/waterbag.yaml DEVICE=0
+```
 
-### 扩展开发
+两个脚本都复用 [`train_ultralytics.py`](train_ultralytics.py)，常用参数包括：
 
-1. **添加新摄像头**
-   - 在CAMERA_CONFIG中添加新配置
-   - 创建对应的CameraHandler实例
-   - 更新Observer监控列表
+```bash
+python train_yolo11.py \
+  --model yolo11n.pt \
+  --data data/waterbag.yaml \
+  --epochs 100 \
+  --imgsz 640 \
+  --batch 16 \
+  --device 0 \
+  --extra lr0=0.005
+```
 
-2. **修改检测算法**
-   - 继承YOLOModel类实现自定义检测逻辑
-   - 修改detect和detect_patches方法
-   - 更新模型配置文件
+### 对比模型
 
-3. **集成新设备**
-   - 实现新的设备控制类
-   - 在PLCController中添加对应方法
-   - 更新Web界面显示
+训练完成后，用同一验证集比较 YOLOv8 / YOLO11：
+
+```bash
+python benchmark_ultralytics_models.py \
+  --models runs/train/yolov8_waterbag/weights/best.pt runs/train/yolo11_waterbag/weights/best.pt \
+  --data data/waterbag.yaml \
+  --device 0 \
+  --output artifacts/model_benchmarks.csv \
+  --json-output artifacts/model_benchmarks.json
+```
+
+建议在 README 或简历项目说明中记录如下表格，而不是只写“升级到最新模型”：
+
+| Model | mAP50-95 | mAP50 | Precision | Recall | Total ms/img | 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| YOLOv8n | 待测 | 待测 | 待测 | 待测 | 待测 | 稳定基线 |
+| YOLO11n | 待测 | 待测 | 待测 | 待测 | 待测 | 升级候选 |
+
+更像工程决策的结论应该是：在产线节拍、可接受漏检率、GPU/CPU 资源和模型部署格式约束下，选择哪个模型进入 `configs/production.example.yaml`。
+
+## Web API
+
+```http
+POST /api/control/start
+POST /api/control/stop
+GET  /api/status
+GET  /api/results/recent?limit=12
+GET  /api/results/metrics?limit=40
+POST /api/demo/upload
+```
+
+说明：
+
+- `/api/results/recent`
+  返回最近结果列表，适合历史表格或外部看板接入
+- `/api/results/metrics`
+  返回 timeout / ack retry / stale frame / plc failure 等聚合统计
+- `/api/demo/upload`
+  上传图片到指定相机目录，复用与产线一致的文件监控链路
+
+## 系统链路
+
+这套 demo 的核心价值不是“调用了一个检测模型”，而是把一条工业视觉链路明确建模出来。
+
+### 简历定位
+
+如果把这个项目写进机器人链路工程师简历，建议突出：
+
+- 工业视觉闭环：相机输入、检测、袋体级关联、决策、PLC 控制和 Ack 反馈
+- 时序可靠性：乱序旧帧忽略、等待超时、Ack 重试和故障注入
+- 可观测性：Web 面板、SQLite 留档、回放和异常指标
+- 模型工程化：YOLOv5 legacy 资产保留，YOLOv8 / YOLO11 统一训练与 benchmark 选型
+
+一句话版本：
+
+> 构建水样采集袋工业视觉检测闭环系统，完成双相机图像接入、YOLO 缺陷检测、袋体级多相机关联、PLC 指令下发与 Ack 重试、历史回放和故障注入验证，并对 YOLOv8 / YOLO11 进行精度与端侧时延对比以支撑部署选型。
+
+### 数据模型
+
+- `FramePacket`
+  传感器输入数据包
+- `PerceptionResult`
+  算法感知结果
+- `DecisionResult`
+  决策层输出
+- `ControlCommand`
+  发送给执行层的控制命令
+- `ExecutionFeedback`
+  PLC/mock 返回的 Ack 与执行反馈
+- `BagSummary`
+  同一袋体跨相机聚合结果
+- `TimingBreakdown`
+  队列、推理、决策、控制、持久化时延
+- `PipelineStateEvent`
+  显式状态机轨迹
+
+### 多相机袋体级关联
+
+当前实现不把双相机当成两条完全独立的检测流，而是围绕 `bag_id` 进行聚合：
+
+- 正常袋体默认等待所有预期相机都到齐后再放行
+- 任一相机命中异常时整袋立即 `reject`
+- 若长时间等不到另一侧相机，会按 `pending_timeout_ms` 输出独立 timeout 结果
+- 若同机位旧帧乱序迟到，会被识别并忽略
+
+### 控制 Ack / 超时 / 重试
+
+PLC 层支持：
+
+- `ack_timeout_ms`
+- `max_retries`
+- `retry_interval_ms`
+- `mock_ack_latency_ms`
+- `mock_fail_first_attempts`
+
+因此可以稳定演示：
+
+- 正常 Ack
+- Ack 超时
+- Ack 重试成功
+- 重试耗尽失败
+
+### 重复缺陷状态隔离
+
+重复缺陷判定虽然仍是轻量持久化方案，但已经支持：
+
+- `history_namespace`
+- 按 `runtime / replay / manual` 来源隔离
+
+这样回放、在线监控和单图排查共用一个历史文件时，不会互相污染状态。
+
+## 当前推荐目录结构
+
+如果你是第一次阅读这个仓库，建议按这个顺序看：
+
+```text
+.
+├── app.py
+├── benchmark_ultralytics_models.py
+├── configs/
+│   ├── demo.yaml
+│   └── production.example.yaml
+├── train_ultralytics.py
+├── train_v8.py
+├── train_yolo11.py
+├── waterbag_inspection/
+│   ├── cli.py
+│   ├── config.py
+│   ├── schemas.py
+│   ├── pipeline.py
+│   ├── correlation.py
+│   ├── policy.py
+│   ├── plc.py
+│   ├── replay.py
+│   ├── repeater.py
+│   ├── fault_injection.py
+│   ├── service.py
+│   ├── storage.py
+│   └── webapp.py
+├── templates/
+│   └── index.html
+├── tests/
+├── legacy/
+└── demo_data/
+```
+
+## 开发与测试
+
+安装开发依赖：
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+运行测试：
+
+```bash
+python -m pytest -q tests
+```
+
+当前测试覆盖的重点包括：
+
+- 二阶段检测主流程
+- 多相机关联
+- 等待超时淘汰
+- Ack 重试
+- 乱序旧帧忽略
+- replay
+- 故障注入
+- SQLite 留档
+
+## 限制与说明
+
+- 仓库默认不附带真实生产权重
+- `configs/production.example.yaml` 只是部署模板，不代表开箱即用
+- 当前 demo 更强调链路与工程结构；模型 benchmark 脚本已提供，但真实指标需要接入你的生产数据集和权重后生成
+- 仓库保留了较多原始 YOLO 代码与历史脚本，是为了兼容原始项目演化过程
+
+## 路线图
+
+后续值得继续推进的方向包括：
+
+- 将 `bag_id` 从文件名推断升级为显式产线触发 ID
+- 增加更细粒度的相机掉线、网络延迟、PLC 故障注入
+- 将重复缺陷状态从 JSON 文件迁移到数据库或缓存
+- 增加趋势统计、检索、过滤和报表导出
+- 引入真实回放数据集做非 mock 回归验证
+- 增加 ONNX / TensorRT 导出和部署时延 benchmark
 
 ## 许可证
 
-本项目基于AGPL-3.0许可证开源。
+本仓库使用 [`LICENSE`](LICENSE) 中提供的 `AGPL-3.0` 许可证。
 
-## 联系我们
+如果你计划将本项目用于网络服务、闭源系统或商业场景，请务必先确认许可证要求。
 
-如有问题或建议，请联系2972689924@qq.com。
+## 致谢
 
----
-
-**注意**: 本系统为工业级应用，请在专业人员指导下部署和使用。
+- 感谢原始 YOLOv5/YOLO 生态为训练、推理和模型导出提供的基础能力
+- 感谢这个项目早期在真实工业场景中的探索，它为后续工程化重构提供了足够真实的问题来源

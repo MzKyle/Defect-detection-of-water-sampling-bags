@@ -1,0 +1,2 @@
+-r requirements-demo.txt
+pytest>=8.2.0

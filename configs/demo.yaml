@@ -1,0 +1,86 @@
+app:
+  name: Waterbag Inspection Demo
+  host: 0.0.0.0
+  port: 5000
+  auto_start: true
+  open_browser: false
+  browser_url: http://127.0.0.1:5000
+
+cameras:
+  - id: 1
+    name: A面相机
+    watch_dir: demo_data/camera1
+  - id: 2
+    name: B面相机
+    watch_dir: demo_data/camera2
+
+models:
+  primary:
+    backend: mock
+    device: cpu
+    conf_thres: 0.3
+    iou_thres: 0.3
+  patch:
+    backend: mock
+    device: cpu
+    conf_thres: 0.2
+    iou_thres: 0.3
+
+patch_detection:
+  enabled: true
+  horizontal: 4
+  vertical: 5
+  conf_thres: 0.2
+  iou_thres: 0.3
+  save_visualizations: false
+  visualization_dir: artifacts/patch_vis
+
+storage:
+  backend: sqlite
+  sqlite_path: artifacts/inspection.db
+
+plc:
+  backend: mock
+  enabled: true
+  port: COM4
+  baudrate: 115200
+  parity: N
+  stopbits: 1
+  bytesize: 8
+  timeout: 0.1
+  registers:
+    cam1: 100
+    cam2: 102
+    alert: 104
+    bag: 106
+  alert_pulse_seconds: 0.2
+  ack_timeout_ms: 200
+  max_retries: 1
+  retry_interval_ms: 50
+  mock_ack_latency_ms: 0
+  mock_fail_first_attempts: 0
+
+correlation:
+  enabled: true
+  expected_camera_ids: [1, 2]
+  hold_non_defect_until_complete: true
+  pending_timeout_ms: 1500
+  timeout_action: reject
+  finalized_retention_ms: 5000
+
+repeat_detection:
+  enabled: true
+  history_path: artifacts/repeat_history.json
+  history_namespace: demo
+  isolate_by_source: true
+  iou_threshold: 0.5
+  max_entries_per_camera: 50
+
+runtime:
+  backup_dir: artifacts/backups
+  result_dir: artifacts/results
+  upload_dir: artifacts/uploads
+  cooldown_seconds: 0.3
+  file_ready_timeout_seconds: 5.0
+  file_stable_seconds: 0.3
+  queue_poll_interval_seconds: 0.2

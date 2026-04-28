@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ app_name }}</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        :root {
+            --bg: #f3efe7;
+            --panel: rgba(255, 252, 246, 0.9);
+            --ink: #1f2a25;
+            --muted: #6f746e;
+            --line: rgba(31, 42, 37, 0.12);
+            --accent: #0f7b6c;
+            --warn: #cb5331;
+            --ok: #3f7f41;
+            --shadow: 0 18px 50px rgba(31, 42, 37, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(15, 123, 108, 0.18), transparent 34%),
+                radial-gradient(circle at right 10%, rgba(203, 83, 49, 0.14), transparent 28%),
+                linear-gradient(180deg, #f6f1e7 0%, #efe8da 100%);
+            min-height: 100vh;
+        }
+
+        .page {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 28px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 24px;
+            align-items: start;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(8px);
+        }
+
+        .hero-copy {
+            padding: 28px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(15, 123, 108, 0.2);
+            color: var(--accent);
+            background: rgba(15, 123, 108, 0.08);
+            font-size: 13px;
+        }
+
+        h1 {
+            margin: 18px 0 10px;
+            font-size: clamp(32px, 4vw, 54px);
+            line-height: 1.02;
+            letter-spacing: -0.04em;
+        }
+
+        .lead {
+            margin: 0;
+            color: var(--muted);
+            font-size: 16px;
+            line-height: 1.7;
+            max-width: 70ch;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 22px;
+        }
+
+        button, select, input[type="file"] {
+            font: inherit;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 14px;
+            padding: 13px 18px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            color: white;
+            background: linear-gradient(135deg, #0f7b6c, #156e88);
+            box-shadow: 0 12px 24px rgba(15, 123, 108, 0.18);
+        }
+
+        .btn-secondary {
+            color: var(--ink);
+            background: white;
+            border: 1px solid var(--line);
+        }
+
+        .hero-side {
+            padding: 24px;
+            display: grid;
+            gap: 14px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .stat {
+            padding: 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.76);
+            border: 1px solid var(--line);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .stat-value {
+            margin-top: 8px;
+            font-size: 26px;
+            font-weight: 700;
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .workspace {
+            display: grid;
+            gap: 24px;
+        }
+
+        .camera-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 24px;
+        }
+
+        .camera-card {
+            padding: 20px;
+        }
+
+        .camera-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .camera-title {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            background: rgba(63, 127, 65, 0.12);
+            color: var(--ok);
+        }
+
+        .badge.warn {
+            background: rgba(203, 83, 49, 0.12);
+            color: var(--warn);
+        }
+
+        .preview {
+            overflow: hidden;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background:
+                linear-gradient(135deg, rgba(15, 123, 108, 0.08), rgba(21, 110, 136, 0.05)),
+                #fff;
+            aspect-ratio: 4 / 3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .camera-meta {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .meta-block {
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.74);
+            border: 1px solid var(--line);
+        }
+
+        .meta-label {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .meta-value {
+            margin-top: 6px;
+            font-size: 15px;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .demo-panel {
+            padding: 22px;
+        }
+
+        .demo-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 12px;
+            align-items: end;
+        }
+
+        .field {
+            display: grid;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        select,
+        input[type="file"] {
+            width: 100%;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            padding: 12px 14px;
+            background: white;
+        }
+
+        .history-card {
+            padding: 22px;
+        }
+
+        .observability-card {
+            padding: 22px;
+            display: grid;
+            gap: 18px;
+        }
+
+        .observability-head {
+            display: flex;
+            align-items: start;
+            justify-content: space-between;
+            gap: 18px;
+        }
+
+        .observability-title {
+            margin: 12px 0 0;
+            font-size: 24px;
+        }
+
+        .fault-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .fault-feed {
+            padding: 16px 18px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.7);
+        }
+
+        .fault-feed-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .fault-feed-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.82);
+        }
+
+        .fault-feed-main {
+            display: grid;
+            gap: 6px;
+        }
+
+        .fault-feed-meta {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .signal-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .signal-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            background: rgba(31, 42, 37, 0.08);
+            color: var(--ink);
+        }
+
+        .signal-pill.timeout,
+        .signal-pill.plc_failure {
+            background: rgba(203, 83, 49, 0.12);
+            color: var(--warn);
+        }
+
+        .signal-pill.ack_retry {
+            background: rgba(15, 123, 108, 0.12);
+            color: var(--accent);
+        }
+
+        .signal-pill.stale_frame {
+            background: rgba(180, 125, 34, 0.14);
+            color: #8e6018;
+        }
+
+        .badge.pending {
+            background: rgba(180, 125, 34, 0.14);
+            color: #8e6018;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 12px 10px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        th {
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .footer-note {
+            margin-top: 16px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        @media (max-width: 1080px) {
+            .hero,
+            .camera-grid,
+            .demo-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .fault-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            .page {
+                padding: 16px;
+            }
+
+            .camera-meta,
+            .stat-grid,
+            .fault-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-copy,
+            .hero-side,
+            .camera-card,
+            .demo-panel,
+            .history-card {
+                padding: 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <section class="hero">
+            <div class="card hero-copy">
+                <div class="eyebrow">Industrial Vision Demo</div>
+                <h1>{{ app_name }}</h1>
+                <p class="lead">
+                    这是重构后的演示骨架。默认使用可复现的 mock 检测链路，你可以通过上传图片模拟双相机输入，
+                    也可以切换到生产配置接入真实目录、模型权重和 PLC。
+                </p>
+                <div class="hero-actions">
+                    <button class="btn btn-primary" id="start-runtime">启动监控</button>
+                    <button class="btn btn-secondary" id="stop-runtime">停止监控</button>
+                </div>
+            </div>
+
+            <aside class="card hero-side">
+                <div class="stat-grid">
+                    <div class="stat">
+                        <div class="stat-label">Runtime</div>
+                        <div class="stat-value" id="runtime-status">Idle</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Recent Events</div>
+                        <div class="stat-value" id="recent-count">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Defect Alerts</div>
+                        <div class="stat-value" id="defect-count">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Repeat Alerts</div>
+                        <div class="stat-value" id="repeat-count">0</div>
+                    </div>
+                </div>
+                <p class="hint">
+                    Demo 提示：文件名里包含 <code>defect</code>/<code>ng</code> 会模拟一次检测命中；
+                    包含 <code>patch</code>/<code>micro</code> 会模拟二次网格检测命中。
+                </p>
+            </aside>
+        </section>
+
+        <section class="workspace">
+            <div class="camera-grid">
+                {% for camera in cameras %}
+                <article class="card camera-card" data-camera-id="{{ camera.camera_id }}">
+                    <div class="camera-head">
+                        <h2 class="camera-title">{{ camera.name }}</h2>
+                        <span class="badge" id="camera-badge-{{ camera.camera_id }}">待机</span>
+                    </div>
+                    <div class="preview">
+                        <img id="camera-image-{{ camera.camera_id }}" alt="{{ camera.name }}">
+                    </div>
+                    <div class="camera-meta">
+                        <div class="meta-block">
+                            <div class="meta-label">最新状态</div>
+                            <div class="meta-value" id="camera-status-{{ camera.camera_id }}">未检测</div>
+                        </div>
+                        <div class="meta-block">
+                            <div class="meta-label">最近检测时间</div>
+                            <div class="meta-value" id="camera-time-{{ camera.camera_id }}">--</div>
+                        </div>
+                        <div class="meta-block">
+                            <div class="meta-label">检测阶段框数</div>
+                            <div class="meta-value" id="camera-counts-{{ camera.camera_id }}">stage1=0, stage2=0</div>
+                        </div>
+                        <div class="meta-block">
+                            <div class="meta-label">目录</div>
+                            <div class="meta-value">{{ camera.watch_dir }}</div>
+                        </div>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+
+            <section class="card demo-panel">
+                <div class="demo-controls">
+                    <div class="field">
+                        <label for="camera-select">模拟相机</label>
+                        <select id="camera-select">
+                            {% for camera in cameras %}
+                            <option value="{{ camera.camera_id }}">{{ camera.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="demo-image">上传图片到监控目录</label>
+                        <input type="file" id="demo-image" accept=".jpg,.jpeg,.png,.bmp">
+                    </div>
+                    <button class="btn btn-primary" id="upload-btn">提交演示</button>
+                </div>
+                <p class="footer-note" id="upload-hint">
+                    这一步会把文件复制到对应相机目录，并沿用与产线一致的监控和处理链路。
+                </p>
+            </section>
+
+            <section class="card observability-card">
+                <div class="observability-head">
+                    <div>
+                        <div class="eyebrow">Link Observability</div>
+                        <h2 class="observability-title">Timeout / Ack Retry / Out-of-Order</h2>
+                    </div>
+                    <p class="hint" id="metrics-summary">
+                        最近 40 条链路结果的健康统计，用来观察超时淘汰、执行重试和乱序旧帧。
+                    </p>
+                </div>
+                <div class="fault-grid">
+                    <div class="stat">
+                        <div class="stat-label">Timeout Bags</div>
+                        <div class="stat-value" id="timeout-count">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Ack Retries</div>
+                        <div class="stat-value" id="ack-retry-count">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Stale Frames</div>
+                        <div class="stat-value" id="stale-count">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Ack Failures</div>
+                        <div class="stat-value" id="ack-failure-count">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Avg Ack Attempts</div>
+                        <div class="stat-value" id="avg-ack-attempts">0.0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Avg Control Latency</div>
+                        <div class="stat-value" id="avg-control-ms">0.0 ms</div>
+                    </div>
+                </div>
+                <div class="fault-feed">
+                    <div class="meta-label">Recent Fault Signals</div>
+                    <div class="fault-feed-list" id="fault-feed"></div>
+                </div>
+            </section>
+
+            <section class="card history-card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>袋体</th>
+                            <th>相机</th>
+                            <th>结果</th>
+                            <th>链路信号</th>
+                            <th>重复缺陷</th>
+                            <th>Ack</th>
+                            <th>PLC</th>
+                            <th>耗时</th>
+                            <th>框数</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body"></tbody>
+                </table>
+            </section>
+        </section>
+    </div>
+
+    <script>
+        const socket = io();
+        const placeholder = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='720' viewBox='0 0 960 720'%3E%3Crect width='960' height='720' fill='%23fbfaf6'/%3E%3Ccircle cx='480' cy='320' r='110' fill='%230f7b6c' fill-opacity='0.08'/%3E%3Cpath d='M340 470h280' stroke='%231f2a25' stroke-opacity='0.18' stroke-width='18' stroke-linecap='round'/%3E%3C/svg%3E";
+
+        document.querySelectorAll("[id^='camera-image-']").forEach((image) => {
+            image.src = placeholder;
+        });
+
+        function setRuntimeStatus(text) {
+            document.getElementById("runtime-status").textContent = text;
+        }
+
+        function renderSignalPills(signals) {
+            if (!signals || signals.length === 0) {
+                return "<span class='signal-pill'>normal</span>";
+            }
+            return signals.map((signal) => `<span class="signal-pill ${signal}">${signal}</span>`).join("");
+        }
+
+        function renderHistory(rows) {
+            const body = document.getElementById("history-body");
+            body.innerHTML = "";
+            rows.forEach((row) => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${row.timestamp}</td>
+                    <td>${row.bag_id}</td>
+                    <td>${row.camera_name}</td>
+                    <td>${row.status}</td>
+                    <td><div class="signal-row">${renderSignalPills(row.fault_signals)}</div></td>
+                    <td>${row.repeated ? "是" : "否"}</td>
+                    <td>${row.ack_attempts > 0 ? `${row.ack_attempts} attempt(s)` : "-"}</td>
+                    <td>${row.plc_success ? "正常" : "失败"}</td>
+                    <td>${row.latency_ms.toFixed(1)} ms</td>
+                    <td>${row.stage1_count}/${row.stage2_count}/${row.final_count}</td>
+                `;
+                body.appendChild(tr);
+            });
+        }
+
+        function renderFaultFeed(rows) {
+            const feed = document.getElementById("fault-feed");
+            feed.innerHTML = "";
+            if (!rows || rows.length === 0) {
+                feed.innerHTML = `<div class="fault-feed-item"><div class="fault-feed-main"><strong>暂无异常信号</strong><div class="fault-feed-meta">最近窗口内没有 timeout、Ack retry、乱序旧帧或 PLC failure。</div></div></div>`;
+                return;
+            }
+
+            rows.forEach((row) => {
+                const item = document.createElement("div");
+                item.className = "fault-feed-item";
+                item.innerHTML = `
+                    <div class="fault-feed-main">
+                        <strong>${row.bag_id} · ${row.camera_name}</strong>
+                        <div class="fault-feed-meta">${row.timestamp} · ${row.decision_reason}</div>
+                    </div>
+                    <div class="signal-row">${renderSignalPills(row.fault_signals)}</div>
+                `;
+                feed.appendChild(item);
+            });
+        }
+
+        function renderMetrics(payload) {
+            document.getElementById("recent-count").textContent = payload.total_events;
+            document.getElementById("defect-count").textContent = payload.defect_events;
+            document.getElementById("repeat-count").textContent = payload.repeat_events;
+            document.getElementById("timeout-count").textContent = payload.timeout_events;
+            document.getElementById("ack-retry-count").textContent = payload.ack_retry_events;
+            document.getElementById("stale-count").textContent = payload.stale_frame_events;
+            document.getElementById("ack-failure-count").textContent = payload.ack_failure_events;
+            document.getElementById("avg-ack-attempts").textContent = payload.avg_ack_attempts.toFixed(2);
+            document.getElementById("avg-control-ms").textContent = `${payload.avg_control_ms.toFixed(1)} ms`;
+            document.getElementById("metrics-summary").textContent =
+                `最近 ${payload.limit} 条结果中，平均总耗时 ${payload.avg_latency_ms.toFixed(1)} ms，最大 Ack 尝试 ${payload.max_ack_attempts} 次。`;
+            renderFaultFeed(payload.fault_rows);
+        }
+
+        async function refreshStatus() {
+            const response = await fetch("/api/status");
+            const payload = await response.json();
+            setRuntimeStatus(payload.running ? "Running" : "Idle");
+        }
+
+        async function refreshHistory() {
+            const response = await fetch("/api/results/recent?limit=12");
+            const rows = await response.json();
+            renderHistory(rows);
+        }
+
+        async function refreshMetrics() {
+            const response = await fetch("/api/results/metrics?limit=40");
+            const payload = await response.json();
+            renderMetrics(payload);
+        }
+
+        async function controlRuntime(action) {
+            const response = await fetch(`/api/control/${action}`, { method: "POST" });
+            if (!response.ok) {
+                throw new Error(`${action} failed`);
+            }
+            await refreshStatus();
+        }
+
+        document.getElementById("start-runtime").addEventListener("click", async () => {
+            await controlRuntime("start");
+        });
+
+        document.getElementById("stop-runtime").addEventListener("click", async () => {
+            await controlRuntime("stop");
+        });
+
+        document.getElementById("upload-btn").addEventListener("click", async () => {
+            const fileInput = document.getElementById("demo-image");
+            const file = fileInput.files[0];
+            if (!file) {
+                document.getElementById("upload-hint").textContent = "请选择一张图片后再提交。";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("camera_id", document.getElementById("camera-select").value);
+            formData.append("image", file);
+
+            const response = await fetch("/api/demo/upload", {
+                method: "POST",
+                body: formData,
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                document.getElementById("upload-hint").textContent = payload.error || "上传失败";
+                return;
+            }
+            document.getElementById("upload-hint").textContent = `已进入队列: ${payload.filename}`;
+            fileInput.value = "";
+        });
+
+        socket.on("inspection_update", async (payload) => {
+            const cameraId = payload.camera_id;
+            const badge = document.getElementById(`camera-badge-${cameraId}`);
+            const status = document.getElementById(`camera-status-${cameraId}`);
+            const time = document.getElementById(`camera-time-${cameraId}`);
+            const counts = document.getElementById(`camera-counts-${cameraId}`);
+            const image = document.getElementById(`camera-image-${cameraId}`);
+
+            status.textContent = payload.status;
+            time.textContent = payload.timestamp;
+            counts.textContent = `stage1=${payload.stage1_count}, stage2=${payload.stage2_count}, ack=${payload.ack_attempts}`;
+            badge.textContent = payload.status;
+            badge.classList.remove("warn", "pending");
+            if (payload.status === "异常" || payload.status === "超时") {
+                badge.classList.add("warn");
+            } else if (payload.status === "待确认") {
+                badge.classList.add("pending");
+            }
+            image.src = payload.image ? `data:image/jpeg;base64,${payload.image}` : placeholder;
+
+            await Promise.all([refreshHistory(), refreshMetrics()]);
+        });
+
+        refreshStatus();
+        refreshHistory();
+        refreshMetrics();
+    </script>
+</body>
+</html>
