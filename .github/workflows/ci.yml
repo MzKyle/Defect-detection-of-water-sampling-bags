@@ -31,4 +31,4 @@ jobs:
       - name: Smoke test demo CLI
         run: |
           python -m waterbag_inspection seed-demo --output-root demo_data --clean
-          python -m waterbag_inspection replay --config configs/demo.yaml --source-root demo_data --limit 3 --reset-history
+          python -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --limit 3 --reset-history
