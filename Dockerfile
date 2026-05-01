@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV WATERBAG_CONFIG=configs/demo.yaml
+ENV WATERBAG_CONFIG=config/demo.yaml
 
 WORKDIR /app
 
@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE 5000
 
-CMD ["python", "-m", "waterbag_inspection", "serve", "--config", "configs/demo.yaml"]
+CMD ["python", "-m", "waterbag_inspection", "serve", "--config", "config/demo.yaml"]

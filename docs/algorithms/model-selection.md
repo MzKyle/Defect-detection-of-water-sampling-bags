@@ -8,7 +8,7 @@
 2. 端侧延迟是否满足产线节拍？
 3. 部署复杂度和稳定性是否可接受？
 
-因此项目保留 YOLOv5 legacy 资产，新增 YOLOv8 / YOLO11 统一训练与 benchmark 入口，让模型选择可以被复现。
+因此项目将 YOLOv5 legacy 资产归档到 `yolo_legacy/`，同时保留 YOLOv8 / YOLO11 统一训练与 benchmark 入口，让模型选择可以被复现。
 
 ## 推荐实验矩阵
 
@@ -23,13 +23,13 @@
 YOLOv8:
 
 ```bash
-python train_v8.py --data data/waterbag.yaml --device 0
+python train_v8.py --data config/waterbag.yaml --device 0
 ```
 
 YOLO11:
 
 ```bash
-python train_yolo11.py --data data/waterbag.yaml --device 0
+python train_yolo11.py --data config/waterbag.yaml --device 0
 ```
 
 ## 对比命令
@@ -37,7 +37,7 @@ python train_yolo11.py --data data/waterbag.yaml --device 0
 ```bash
 python benchmark_ultralytics_models.py \
   --models runs/train/yolov8_waterbag/weights/best.pt runs/train/yolo11_waterbag/weights/best.pt \
-  --data data/waterbag.yaml \
+  --data config/waterbag.yaml \
   --device 0 \
   --output artifacts/model_benchmarks.csv \
   --json-output artifacts/model_benchmarks.json

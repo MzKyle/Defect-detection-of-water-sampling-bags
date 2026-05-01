@@ -11,7 +11,7 @@ def test_replay_runs_multiple_frames(tmp_path):
     source_root = tmp_path / "replay_data"
     seed_demo_images(str(source_root), clean=True)
 
-    settings = load_settings("configs/demo.yaml")
+    settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")
     settings.runtime.result_dir = str(tmp_path / "results")
     settings.runtime.upload_dir = str(tmp_path / "uploads")

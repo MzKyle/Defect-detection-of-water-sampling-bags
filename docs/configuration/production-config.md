@@ -3,7 +3,7 @@
 生产模板：
 
 ```text
-configs/production.example.yaml
+config/production.example.yaml
 ```
 
 该文件不是开箱即用配置，需要按现场环境修改。

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
-DEFAULT_DATA = "data/waterbag.yaml"
+DEFAULT_DATA = "config/waterbag.yaml"
 
 
 def _coerce_extra_value(value: str) -> Any:

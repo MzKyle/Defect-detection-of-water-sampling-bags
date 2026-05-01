@@ -7,11 +7,9 @@ __pycache__/
 
 # 数据集（关键：忽略原始数据）
 datasets/
-data/dataset/
-data/images/
-data/labels/
 
 # 输出文件（避免上传大体积结果）
+build/
 runs/
 outputs/
 cropped_results/

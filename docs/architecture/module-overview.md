@@ -28,16 +28,27 @@
 | `train_v8.py` | YOLOv8 baseline 训练包装 |
 | `train_yolo11.py` | YOLO11 candidate 训练包装 |
 | `benchmark_ultralytics_models.py` | 对比模型精度、召回和验证耗时 |
-| `data/waterbag.yaml` | 默认数据集配置 |
+| `config/waterbag.yaml` | 默认数据集配置 |
+
+## C++ 实时后端
+
+| 文件 | 主要类 / 函数 | 说明 |
+| --- | --- | --- |
+| `cpp_backend/README.md` | - | C++ 实时链路总览、构建、ONNX Runtime CUDA 和运行方式 |
+| `config/cpp_backend/demo.ini` | - | C++ 实时后端示例配置 |
+| `cpp_backend/detect_orchestrator/src/detector.cpp` | `MockDetector`, `OnnxRuntimeDetector`, `make_detector` | 可选 ONNX Runtime CUDA 检测器 |
+| `cpp_backend/detect_orchestrator/src/pipeline.cpp` | `InspectionPipeline` | C++ 实时推理编排 |
+| `cpp_backend/detect_orchestrator/src/runtime.cpp` | `RealtimeRuntime` | 目录轮询、worker、顺序分拣 |
+| `cpp_backend/camera_driver/`, `cpp_backend/PLC_driver/` | burst 采图 / PLC 控制 | 现场链路设备适配 |
 
 ## Legacy 资产
 
 | 路径 | 说明 |
 | --- | --- |
-| `detect/` | YOLOv5 检测、训练、验证脚本 |
-| `models/` | YOLOv5 模型结构 |
-| `utils/` | YOLOv5 工具函数 |
-| `classify/`, `segment/` | 原始 YOLO 生态保留模块 |
+| `yolo_legacy/detect/` | YOLOv5 检测、训练、验证脚本 |
+| `yolo_legacy/models/` | YOLOv5 模型结构 |
+| `yolo_legacy/utils/` | YOLOv5 工具函数 |
+| `yolo_legacy/classify/`, `yolo_legacy/segment/` | 原始 YOLO 生态保留模块 |
 | `legacy/` | 重构前实验脚本和旧页面 |
 
 ## 运行入口关系

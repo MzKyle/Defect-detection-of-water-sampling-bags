@@ -9,6 +9,7 @@
 - [README.md](README.md)
 - [docs/README.md](docs/README.md)
 - [docs/architecture/README.md](docs/architecture/README.md)
+- [cpp_backend/README.md](cpp_backend/README.md)
 - [docs/workflow/fault-injection.md](docs/workflow/fault-injection.md)
 
 ## 本地开发
@@ -51,12 +52,20 @@ make serve-docs
 make test
 ```
 
+如果你正在改 C++ 实时后端，也建议额外跑一遍：
+
+```bash
+cmake -S cpp_backend -B build/cpp_backend
+cmake --build build/cpp_backend -j
+ctest --test-dir build/cpp_backend --output-on-failure
+```
+
 也可以直接使用 CLI：
 
 ```bash
-python -m waterbag_inspection serve --config configs/demo.yaml
-python -m waterbag_inspection replay --config configs/demo.yaml --source-root demo_data --reset-history
-python -m waterbag_inspection inject-faults --config configs/demo.yaml --scenario all --output-root artifacts/fault_injection --clean
+python -m waterbag_inspection serve --config config/demo.yaml
+python -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --reset-history
+python -m waterbag_inspection inject-faults --config config/demo.yaml --scenario all --output-root artifacts/fault_injection --clean
 ```
 
 ## 我们最欢迎的贡献方向
@@ -76,13 +85,15 @@ python -m waterbag_inspection inject-faults --config configs/demo.yaml --scenari
 python -m pytest -q tests
 ```
 
+如果改动涉及 `cpp_backend/`，请再确认 C++ 构建和测试通过。
+
 ### 最小功能验证
 
 至少建议验证下面其中一项：
 
-- `python -m waterbag_inspection inspect --config configs/demo.yaml --camera-id 1 --image demo_data/camera1/bag_0001_cam1_good.jpg --reset-history`
-- `python -m waterbag_inspection replay --config configs/demo.yaml --source-root demo_data --reset-history`
-- `python -m waterbag_inspection inject-faults --config configs/demo.yaml --scenario all --output-root artifacts/fault_injection --clean`
+- `python -m waterbag_inspection inspect --config config/demo.yaml --camera-id 1 --image demo_data/camera1/bag_0001_cam1_good.jpg --reset-history`
+- `python -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --reset-history`
+- `python -m waterbag_inspection inject-faults --config config/demo.yaml --scenario all --output-root artifacts/fault_injection --clean`
 
 ### 文档改动
 

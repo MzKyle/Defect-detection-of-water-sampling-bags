@@ -20,7 +20,7 @@ graph TB
 
     subgraph L2["感知决策层"]
         PIPE["InspectionPipeline"]
-        DET["Detector Backend"]
+        DET["Detector Backend<br/>Python Mock / Ultralytics<br/>C++ ONNX Runtime CUDA"]
         COR["BagCorrelator"]
         RPT["RepeatDefectTracker"]
         POL["DecisionPolicy"]
@@ -75,6 +75,7 @@ graph TB
 | `BaseDetector` | 检测器接口 |
 | `MockDetector` | 基于文件名的 mock 检测器 |
 | `UltralyticsDetector` | YOLOv8 / YOLO11 推理后端 |
+| `OnnxRuntimeDetector` | C++ 实时后端的 ONNX Runtime CUDA 检测器 |
 | `BagCorrelator` | 多相机袋体级聚合 |
 | `RepeatDefectTracker` | 重复缺陷 IoU 判定 |
 | `DefaultDecisionPolicy` | 决策与控制命令生成 |
@@ -99,6 +100,15 @@ graph TB
 | Socket.IO | 推送 `inspection_update` |
 | HTTP API | 控制 runtime、查询状态、上传图片、拉取结果 |
 | CLI | serve、seed-demo、inspect、replay、inject-faults |
+
+### C++ 实时后端
+
+`cpp_backend/` 提供另一条实时链路，负责目录轮询、多光源 burst 采图、PLC 控制和可选 ONNX Runtime CUDA 推理。它的入口和配置分别是：
+
+- [cpp_backend/README.md](../../cpp_backend/README.md)
+- [config/cpp_backend/demo.ini](../../config/cpp_backend/demo.ini)
+
+Python demo 仍然保留 `MockDetector` / `UltralyticsDetector` 作为主入口；C++ 后端在需要工业现场实时性时启用。
 
 ## 核心设计原则
 

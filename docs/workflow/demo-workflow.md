@@ -45,7 +45,7 @@ http://127.0.0.1:5000
 
 ```bash
 python -m waterbag_inspection replay \
-  --config configs/demo.yaml \
+  --config config/demo.yaml \
   --source-root demo_data \
   --reset-history
 ```
@@ -55,7 +55,7 @@ python -m waterbag_inspection replay \
 推荐演示顺序：
 
 1. 打开 Web 页面，说明这是实时观测面
-2. 展示 `configs/demo.yaml`，说明相机、模型、PLC 都是配置化
+2. 展示 `config/demo.yaml`，说明相机、模型、PLC 都是配置化
 3. 运行 `seed-demo`，解释四类样本
 4. 运行 replay 或上传图片，观察 Web 变化
 5. 展示 `/api/results/metrics` 或页面指标

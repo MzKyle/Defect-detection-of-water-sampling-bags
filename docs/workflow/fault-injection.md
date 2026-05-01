@@ -14,7 +14,7 @@
 
 ```bash
 python -m waterbag_inspection inject-faults \
-  --config configs/demo.yaml \
+  --config config/demo.yaml \
   --scenario all \
   --output-root artifacts/fault_injection \
   --clean
@@ -30,7 +30,7 @@ make inject-faults
 
 ```bash
 python -m waterbag_inspection inject-faults \
-  --config configs/demo.yaml \
+  --config config/demo.yaml \
   --scenario timeout \
   --output-root artifacts/fault_injection \
   --clean
@@ -47,7 +47,7 @@ python -m waterbag_inspection inject-faults \
 
 ```bash
 python -m waterbag_inspection inject-faults \
-  --config configs/demo.yaml \
+  --config config/demo.yaml \
   --scenario ack-retry \
   --output-root artifacts/fault_injection \
   --clean
@@ -64,7 +64,7 @@ python -m waterbag_inspection inject-faults \
 
 ```bash
 python -m waterbag_inspection inject-faults \
-  --config configs/demo.yaml \
+  --config config/demo.yaml \
   --scenario out-of-order \
   --output-root artifacts/fault_injection \
   --clean

@@ -9,7 +9,7 @@ import yaml
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG_PATH = ROOT_DIR / "configs" / "demo.yaml"
+DEFAULT_CONFIG_PATH = ROOT_DIR / "config" / "demo.yaml"
 
 
 def _resolve_path(value: str | None) -> str | None:

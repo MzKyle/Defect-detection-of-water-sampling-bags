@@ -1,5 +1,5 @@
 PYTHON ?= python
-DATA ?= data/waterbag.yaml
+DATA ?= config/waterbag.yaml
 DEVICE ?= 0
 DOCS_PORT ?= 5173
 
@@ -12,7 +12,7 @@ install-full:
 	$(PYTHON) -m pip install -r requirements.txt
 
 serve-demo:
-	$(PYTHON) -m waterbag_inspection serve --config configs/demo.yaml
+	$(PYTHON) -m waterbag_inspection serve --config config/demo.yaml
 
 serve-docs:
 	$(PYTHON) -m http.server $(DOCS_PORT) -d docs
@@ -21,19 +21,19 @@ seed-demo:
 	$(PYTHON) -m waterbag_inspection seed-demo --output-root demo_data --clean
 
 replay-demo:
-	$(PYTHON) -m waterbag_inspection replay --config configs/demo.yaml --source-root demo_data --reset-history
+	$(PYTHON) -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --reset-history
 
 inject-faults:
-	$(PYTHON) -m waterbag_inspection inject-faults --config configs/demo.yaml --scenario all --output-root artifacts/fault_injection --clean
+	$(PYTHON) -m waterbag_inspection inject-faults --config config/demo.yaml --scenario all --output-root artifacts/fault_injection --clean
 
 inject-timeout:
-	$(PYTHON) -m waterbag_inspection inject-faults --config configs/demo.yaml --scenario timeout --output-root artifacts/fault_injection --clean
+	$(PYTHON) -m waterbag_inspection inject-faults --config config/demo.yaml --scenario timeout --output-root artifacts/fault_injection --clean
 
 inject-ack-retry:
-	$(PYTHON) -m waterbag_inspection inject-faults --config configs/demo.yaml --scenario ack-retry --output-root artifacts/fault_injection --clean
+	$(PYTHON) -m waterbag_inspection inject-faults --config config/demo.yaml --scenario ack-retry --output-root artifacts/fault_injection --clean
 
 inject-out-of-order:
-	$(PYTHON) -m waterbag_inspection inject-faults --config configs/demo.yaml --scenario out-of-order --output-root artifacts/fault_injection --clean
+	$(PYTHON) -m waterbag_inspection inject-faults --config config/demo.yaml --scenario out-of-order --output-root artifacts/fault_injection --clean
 
 train-yolov8:
 	$(PYTHON) train_v8.py --data $(DATA) --device $(DEVICE)
@@ -54,4 +54,4 @@ test:
 
 smoke:
 	$(PYTHON) -m waterbag_inspection seed-demo --output-root demo_data --clean
-	$(PYTHON) -m waterbag_inspection replay --config configs/demo.yaml --source-root demo_data --limit 3 --reset-history
+	$(PYTHON) -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --limit 3 --reset-history

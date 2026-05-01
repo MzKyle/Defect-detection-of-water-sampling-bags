@@ -3,7 +3,7 @@ from waterbag_inspection.fault_injection import run_fault_injections
 
 def test_fault_injections_report_timeout_retry_and_stale(tmp_path):
     payload = run_fault_injections(
-        config_path="configs/demo.yaml",
+        config_path="config/demo.yaml",
         scenario="all",
         output_root=str(tmp_path),
     )

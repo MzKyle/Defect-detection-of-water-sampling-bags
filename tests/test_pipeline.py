@@ -14,7 +14,7 @@ from waterbag_inspection.storage import SQLiteDetectionRepository
 
 
 def test_pipeline_runs_stage2_and_persists_record(tmp_path):
-    settings = load_settings("configs/demo.yaml")
+    settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")
     settings.runtime.result_dir = str(tmp_path / "results")
     settings.runtime.upload_dir = str(tmp_path / "uploads")
@@ -53,7 +53,7 @@ def test_pipeline_runs_stage2_and_persists_record(tmp_path):
 
 
 def test_pipeline_waits_for_peer_camera_before_accept(tmp_path):
-    settings = load_settings("configs/demo.yaml")
+    settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")
     settings.runtime.result_dir = str(tmp_path / "results")
     settings.runtime.upload_dir = str(tmp_path / "uploads")
@@ -95,7 +95,7 @@ def test_pipeline_waits_for_peer_camera_before_accept(tmp_path):
 
 
 def test_pipeline_rejects_immediately_when_any_camera_reports_defect(tmp_path):
-    settings = load_settings("configs/demo.yaml")
+    settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")
     settings.runtime.result_dir = str(tmp_path / "results")
     settings.runtime.upload_dir = str(tmp_path / "uploads")
@@ -130,7 +130,7 @@ def test_pipeline_rejects_immediately_when_any_camera_reports_defect(tmp_path):
 
 
 def test_pipeline_accepts_when_camera2_arrives_before_camera1(tmp_path):
-    settings = load_settings("configs/demo.yaml")
+    settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")
     settings.runtime.result_dir = str(tmp_path / "results")
     settings.runtime.upload_dir = str(tmp_path / "uploads")
@@ -166,7 +166,7 @@ def test_pipeline_accepts_when_camera2_arrives_before_camera1(tmp_path):
 
 
 def test_pipeline_ignores_stale_same_camera_frame(tmp_path):
-    settings = load_settings("configs/demo.yaml")
+    settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")
     settings.runtime.result_dir = str(tmp_path / "results")
     settings.runtime.upload_dir = str(tmp_path / "uploads")
@@ -205,7 +205,7 @@ def test_pipeline_ignores_stale_same_camera_frame(tmp_path):
 
 
 def test_pipeline_flushes_timeout_and_keeps_reject_after_late_peer_frame(tmp_path):
-    settings = load_settings("configs/demo.yaml")
+    settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")
     settings.runtime.result_dir = str(tmp_path / "results")
     settings.runtime.upload_dir = str(tmp_path / "uploads")

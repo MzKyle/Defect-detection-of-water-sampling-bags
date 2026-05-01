@@ -3,7 +3,7 @@
 默认配置：
 
 ```text
-configs/demo.yaml
+config/demo.yaml
 ```
 
 ## app
@@ -126,3 +126,35 @@ runtime:
 ```
 
 这些参数决定目录监听和 worker 处理节奏。
+
+## C++ 后端配置
+
+C++ 实时链路使用 [config/cpp_backend/demo.ini](../../config/cpp_backend/demo.ini)。它把 detector、runtime、plc 和 service 分成独立的 INI 分区，默认仍然是 mock；只有在构建时打开 `WATERBAG_ENABLE_ONNXRUNTIME=ON`，并把 detector 分区的 `backend` 改成 `onnxruntime_cuda`，才会启用真实 ONNX Runtime 推理。
+
+关键分区如下：
+
+| 分区 | 说明 |
+| --- | --- |
+| `service` | 服务自动启动和运行时长 |
+| `logging` | 日志级别、控制台输出和文件输出 |
+| `storage` | JSONL 留档路径 |
+| `detector.presence` / `detector.primary` / `detector.patch` | 三路 detector 配置，支持 mock 或 onnxruntime_cuda |
+| `runtime` | 目录监听、队列、worker 和超时 |
+| `detection` | presence / patch 阈值 |
+| `correlation` | 袋体级关联与超时处理 |
+| `plc` | Ack / retry 和 mock PLC 参数 |
+
+示例 detector 配置：
+
+```ini
+[detector.primary]
+backend = mock
+# backend = onnxruntime_cuda
+# model_path = artifacts/models/primary.onnx
+# use_cuda = true
+# cuda_device_id = 0
+# imgsz = 640
+# nms_iou_threshold = 0.45
+```
+
+`detector.presence` 和 `detector.patch` 使用同样的字段结构。对应的 C++ 实时后端说明见 [cpp_backend/README.md](../../cpp_backend/README.md)。

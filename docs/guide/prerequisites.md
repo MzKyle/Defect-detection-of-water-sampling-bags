@@ -67,6 +67,27 @@ python -m pip install -r requirements.txt
 | `pymodbus` | Modbus RTU PLC 通信 |
 | `pandas`, `matplotlib`, `seaborn`, `scipy` | 训练评估和可视化 |
 
+## C++ 实时后端（可选）
+
+如果你要编译 `cpp_backend/` 里的实时链路，并启用 ONNX Runtime CUDA 推理，还需要准备系统级依赖：
+
+| 依赖 | 用途 |
+| --- | --- |
+| CMake 3.16+ | 构建 C++ 后端 |
+| ONNX Runtime C++ headers / library | 可选 detector 后端 |
+| OpenCV 开发包 | 图像读取、resize、letterbox |
+| CUDA / cuDNN | ONNX Runtime CUDA provider 所依赖的 GPU 运行环境 |
+
+构建命令如下：
+
+```bash
+cmake -S cpp_backend -B build/cpp_backend -DWATERBAG_ENABLE_ONNXRUNTIME=ON
+cmake --build build/cpp_backend -j
+ctest --test-dir build/cpp_backend --output-on-failure
+```
+
+如果你只跑 Python demo，这一组系统依赖不是必需的。C++ 后端的完整说明见 [cpp_backend/README.md](../../cpp_backend/README.md)。
+
 ## 依赖版本说明
 
 `requirements-demo.txt` 和 `requirements.txt` 将 `numpy` 限制在 `1.26.x`，并限制了 OpenCV 上限。这是为了兼容常见的 `scipy` / `matplotlib` 组合，避免安装 OpenCV 新版本时把 `numpy` 拉到 `2.x` 引发全局环境冲突。
@@ -92,5 +113,5 @@ No broken requirements found.
 | --- | --- | --- |
 | `ModuleNotFoundError: flask_socketio` | 未安装最小依赖 | 执行 `python -m pip install -r requirements-demo.txt` |
 | OpenCV 读图失败 | 图片路径不存在或格式不支持 | 检查相机目录、文件扩展名和权限 |
-| YOLO 加载失败 | 未安装完整依赖或权重路径错误 | 安装 `requirements.txt` 并检查 `configs/production.example.yaml` |
+| YOLO 加载失败 | 未安装完整依赖或权重路径错误 | 安装 `requirements.txt` 并检查 `config/production.example.yaml` |
 | Modbus 连接失败 | 串口、波特率或 PLC 未就绪 | 核对 `plc` 配置和现场接线 |

@@ -61,7 +61,7 @@ graph LR
 | 路径 | 说明 |
 | --- | --- |
 | `waterbag_inspection/` | 当前推荐维护的应用层代码 |
-| `configs/` | Demo 和生产部署配置模板 |
+| `config/` | Demo、生产模板、训练数据集和 C++ 后端配置 |
 | `templates/` | Web 看板页面 |
 | `tests/` | 关键链路回归测试 |
 | `demo_data/` | demo 相机输入目录 |
@@ -70,13 +70,15 @@ graph LR
 | `train_v8.py` | YOLOv8 baseline 训练包装脚本 |
 | `train_yolo11.py` | YOLO11 candidate 训练包装脚本 |
 | `benchmark_ultralytics_models.py` | YOLOv8 / YOLO11 模型对比脚本 |
-| `detect/`, `models/`, `utils/` | 保留的 YOLOv5 legacy 训练/推理资产 |
+| `cpp_backend/` | C++ 实时链路、ONNX Runtime CUDA、PLC 和 burst 采图 |
+| `yolo_legacy/` | 归档的 YOLOv5 legacy 训练/推理资产 |
 
 ## 快速导航
 
 - [环境依赖与安装](guide/prerequisites.md) - 准备 Python 环境和依赖
 - [启动 Demo](guide/run-demo.md) - 生成样本并打开 Web 看板
 - [系统架构](architecture/README.md) - 理解整体链路和分层职责
+- [C++ 实时后端](../cpp_backend/README.md) - 了解 ONNX Runtime CUDA、PLC 和 burst 采图
 - [检测主链路](modules/pipeline.md) - 阅读 pipeline 的实际处理步骤
 - [二阶段缺陷检测](algorithms/two-stage-detection.md) - 理解 Stage 1 / Stage 2 的取舍
 - [YOLOv8 / YOLO11 选型](algorithms/model-selection.md) - 用指标支撑模型升级

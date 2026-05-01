@@ -35,7 +35,7 @@ real_replay/
 
 ```bash
 python -m waterbag_inspection replay \
-  --config configs/demo.yaml \
+  --config config/demo.yaml \
   --source-root real_replay \
   --reset-history
 ```
@@ -58,7 +58,7 @@ models:
 
 ```bash
 python -m waterbag_inspection inspect \
-  --config configs/production.example.yaml \
+  --config config/production.example.yaml \
   --camera-id 1 \
   --image real_replay/camera1/sample.jpg
 ```
@@ -68,7 +68,7 @@ python -m waterbag_inspection inspect \
 确认相机软件能稳定输出图片到 `watch_dir`。启动服务后观察：
 
 ```bash
-python -m waterbag_inspection serve --config configs/production.example.yaml
+python -m waterbag_inspection serve --config config/production.example.yaml
 ```
 
 重点观察：

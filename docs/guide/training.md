@@ -9,7 +9,7 @@
 默认配置文件：
 
 ```text
-data/waterbag.yaml
+config/waterbag.yaml
 ```
 
 推荐数据集目录：
@@ -36,7 +36,7 @@ class_id center_x center_y width height
 
 ```bash
 python train_v8.py \
-  --data data/waterbag.yaml \
+  --data config/waterbag.yaml \
   --epochs 100 \
   --imgsz 640 \
   --batch 16 \
@@ -46,14 +46,14 @@ python train_v8.py \
 Makefile:
 
 ```bash
-make train-yolov8 DATA=data/waterbag.yaml DEVICE=0
+make train-yolov8 DATA=config/waterbag.yaml DEVICE=0
 ```
 
 ## 训练 YOLO11 candidate
 
 ```bash
 python train_yolo11.py \
-  --data data/waterbag.yaml \
+  --data config/waterbag.yaml \
   --epochs 100 \
   --imgsz 640 \
   --batch 16 \
@@ -63,7 +63,7 @@ python train_yolo11.py \
 Makefile:
 
 ```bash
-make train-yolo11 DATA=data/waterbag.yaml DEVICE=0
+make train-yolo11 DATA=config/waterbag.yaml DEVICE=0
 ```
 
 ## 通用训练入口
@@ -90,7 +90,7 @@ make train-yolo11 DATA=data/waterbag.yaml DEVICE=0
 ```bash
 python train_yolo11.py \
   --model yolo11n.pt \
-  --data data/waterbag.yaml \
+  --data config/waterbag.yaml \
   --epochs 150 \
   --imgsz 640 \
   --batch 16 \
@@ -106,7 +106,7 @@ python train_yolo11.py \
 ```bash
 python benchmark_ultralytics_models.py \
   --models runs/train/yolov8_waterbag/weights/best.pt runs/train/yolo11_waterbag/weights/best.pt \
-  --data data/waterbag.yaml \
+  --data config/waterbag.yaml \
   --device 0 \
   --output artifacts/model_benchmarks.csv \
   --json-output artifacts/model_benchmarks.json
@@ -126,6 +126,28 @@ python benchmark_ultralytics_models.py \
 | `inference_ms` | 推理耗时 |
 | `postprocess_ms` | 后处理耗时 |
 | `total_ms` | 单图总耗时估计 |
+
+## 导出 ONNX
+
+训练完成后，如果你要把权重交给 C++ 实时后端，建议先导出 ONNX：
+
+```bash
+python export_ultralytics_onnx.py \
+  --weights runs/train/yolo11_waterbag/weights/best.pt \
+  --output artifacts/models/yolo11_waterbag.onnx \
+  --device 0 \
+  --dynamic \
+  --simplify
+```
+
+常用参数：
+
+- `--dynamic`：导出动态输入尺寸
+- `--simplify`：尝试简化 ONNX 图
+- `--half`：在后端支持时导出半精度
+- `--nms`：在模型族支持时把 NMS 一并导出
+
+导出的 ONNX 可以直接给 [cpp_backend/README.md](../../cpp_backend/README.md) 里描述的 C++ ONNX Runtime CUDA 后端使用，前提是构建时打开 `WATERBAG_ENABLE_ONNXRUNTIME=ON`。
 
 ## 进入生产配置
 

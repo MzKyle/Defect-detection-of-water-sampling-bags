@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Validate and compare YOLOv8/YOLO11 checkpoints on the same dataset."
     )
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS, help="model names or checkpoint paths")
-    parser.add_argument("--data", default="data/waterbag.yaml", help="Ultralytics dataset YAML path")
+    parser.add_argument("--data", default="config/waterbag.yaml", help="Ultralytics dataset YAML path")
     parser.add_argument("--imgsz", type=int, default=640, help="validation image size")
     parser.add_argument("--batch", type=int, default=1, help="validation batch size")
     parser.add_argument("--device", default="0", help="CUDA device id, comma list, or cpu")

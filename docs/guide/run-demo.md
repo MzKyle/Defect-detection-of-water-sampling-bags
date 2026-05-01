@@ -26,7 +26,7 @@ python app.py
 等价 CLI 入口：
 
 ```bash
-python -m waterbag_inspection serve --config configs/demo.yaml
+python -m waterbag_inspection serve --config config/demo.yaml
 ```
 
 默认地址：
@@ -51,7 +51,7 @@ Web 页面会展示：
 
 ```bash
 python -m waterbag_inspection inspect \
-  --config configs/demo.yaml \
+  --config config/demo.yaml \
   --camera-id 1 \
   --image demo_data/camera1/bag_0003_cam1_defect_primary.jpg \
   --reset-history
@@ -63,7 +63,7 @@ python -m waterbag_inspection inspect \
 
 ```bash
 python -m waterbag_inspection replay \
-  --config configs/demo.yaml \
+  --config config/demo.yaml \
   --source-root demo_data \
   --limit 4 \
   --reset-history
