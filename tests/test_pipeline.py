@@ -52,6 +52,52 @@ def test_pipeline_runs_stage2_and_persists_record(tmp_path):
     assert len(repository.recent(limit=5)) == 1
 
 
+def test_pipeline_processes_multilight_group_as_single_model_call(tmp_path):
+    settings = load_settings("config/demo.yaml")
+    settings.runtime.backup_dir = str(tmp_path / "backups")
+    settings.runtime.result_dir = str(tmp_path / "results")
+    settings.runtime.upload_dir = str(tmp_path / "uploads")
+    settings.storage.sqlite_path = str(tmp_path / "inspection.db")
+    settings.repeat_detection.history_path = str(tmp_path / "repeat.json")
+    settings.correlation.expected_camera_ids = [1]
+    settings.multilight.enabled = True
+
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    light_paths = {}
+    for light_name in settings.multilight.light_order:
+        marker = "_defect" if light_name == "darkfield" else ""
+        image_path = tmp_path / f"bag_1002_cam1_{light_name}{marker}.jpg"
+        cv2.imwrite(str(image_path), image)
+        light_paths[light_name] = str(image_path)
+
+    repository = SQLiteDetectionRepository(settings.storage.sqlite_path)
+    pipeline = InspectionPipeline(
+        runtime=settings.runtime,
+        patch_config=settings.patch_detection,
+        correlation_config=settings.correlation,
+        repeat_config=settings.repeat_detection,
+        repository=repository,
+        plc_controller=build_plc_controller(settings.plc),
+        primary_detector=build_detector(settings.primary_model),
+        patch_detector=build_detector(settings.patch_model),
+    )
+
+    result = pipeline.process_multilight_images(
+        settings.cameras[0],
+        light_paths,
+        bag_id="bag_1002",
+    )
+
+    assert result.status_text == "异常"
+    assert len(result.stage1_boxes) == 1
+    assert len(result.stage2_boxes) == 0
+    assert result.stage2_result.triggered is False
+    assert result.frame_packet.is_multilight is True
+    assert Path(result.backup_path).is_dir()
+    assert (Path(result.backup_path) / "darkfield.jpg").exists()
+    assert any(event.state == PipelineState.MULTILIGHT_READY for event in result.state_trace)
+
+
 def test_pipeline_waits_for_peer_camera_before_accept(tmp_path):
     settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")

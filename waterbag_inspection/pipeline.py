@@ -6,11 +6,18 @@ import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+from typing import Mapping
 
 import cv2
 import numpy as np
 
-from .config import CameraConfig, CorrelationConfig, PatchConfig, RepeatConfig, RuntimeConfig
+from .config import (
+    CameraConfig,
+    CorrelationConfig,
+    PatchConfig,
+    RepeatConfig,
+    RuntimeConfig,
+)
 from .correlation import BagCorrelator
 from .detectors import BaseDetector, image_to_base64
 from .plc import BasePLCController
@@ -64,12 +71,16 @@ class InspectionPipeline:
         self.patch_detector = patch_detector
         self.decision_policy = DefaultDecisionPolicy()
         self.bag_correlator = BagCorrelator(correlation_config)
-        self.repeat_tracker = RepeatDefectTracker(
-            history_path=repeat_config.history_path,
-            iou_threshold=repeat_config.iou_threshold,
-            max_entries_per_camera=repeat_config.max_entries_per_camera,
-            namespace=repeat_config.history_namespace,
-        ) if repeat_config.enabled else None
+        self.repeat_tracker = (
+            RepeatDefectTracker(
+                history_path=repeat_config.history_path,
+                iou_threshold=repeat_config.iou_threshold,
+                max_entries_per_camera=repeat_config.max_entries_per_camera,
+                namespace=repeat_config.history_namespace,
+            )
+            if repeat_config.enabled
+            else None
+        )
 
         Path(self.runtime.backup_dir).mkdir(parents=True, exist_ok=True)
         Path(self.runtime.result_dir).mkdir(parents=True, exist_ok=True)
@@ -77,7 +88,12 @@ class InspectionPipeline:
         if self.patch_config.save_visualizations:
             Path(self.patch_config.visualization_dir).mkdir(parents=True, exist_ok=True)
 
-    def _mark_state(self, trace: list[PipelineStateEvent], state: PipelineState, detail: str = "") -> None:
+    def _mark_state(
+        self,
+        trace: list[PipelineStateEvent],
+        state: PipelineState,
+        detail: str = "",
+    ) -> None:
         trace.append(PipelineStateEvent(state=state, timestamp=now_iso(), detail=detail))
 
     def process_image(self, camera: CameraConfig, image_path: str) -> InspectionResult:
@@ -94,16 +110,61 @@ class InspectionPipeline:
             packet.source_mtime_ns = os.stat(source_path).st_mtime_ns
         return self.process_packet(packet)
 
+    def process_multilight_images(
+        self,
+        camera: CameraConfig,
+        light_paths: Mapping[str, str],
+        *,
+        bag_id: str | None = None,
+        source_path: str | None = None,
+        metadata: dict | None = None,
+    ) -> InspectionResult:
+        resolved_light_paths = {
+            light_name: str(Path(path).resolve())
+            for light_name, path in light_paths.items()
+        }
+        primary_source = source_path or next(iter(resolved_light_paths.values()))
+        packet = build_frame_packet(
+            camera_id=camera.camera_id,
+            camera_name=camera.name,
+            source_path=str(Path(primary_source).resolve()),
+            bag_id=bag_id,
+            metadata={
+                "source": "manual_multilight",
+                "repeat_scope": "manual_multilight",
+                **(metadata or {}),
+            },
+            light_paths=resolved_light_paths,
+        )
+        packet.file_ready_at = now_iso()
+        packet.processing_started_at = now_iso()
+        existing_paths = [
+            Path(path)
+            for path in resolved_light_paths.values()
+            if Path(path).exists()
+        ]
+        if existing_paths:
+            packet.source_mtime_ns = max(path.stat().st_mtime_ns for path in existing_paths)
+        return self.process_packet(packet)
+
     def _repeat_scope_for_packet(self, frame_packet: FramePacket) -> str | None:
         if not self.repeat_config.isolate_by_source:
             return None
-        return str(frame_packet.metadata.get("repeat_scope") or frame_packet.metadata.get("source") or "default")
+        return str(
+            frame_packet.metadata.get("repeat_scope")
+            or frame_packet.metadata.get("source")
+            or "default"
+        )
 
     def _execute_commands(self, trace: list[PipelineStateEvent], commands: list) -> tuple[list, float]:
         control_started = time.perf_counter()
         execution_feedbacks = []
         for command in commands:
-            self._mark_state(trace, PipelineState.COMMAND_DISPATCHED, f"{command.target}:{command.action}")
+            self._mark_state(
+                trace,
+                PipelineState.COMMAND_DISPATCHED,
+                f"{command.target}:{command.action}",
+            )
             execution_feedbacks.append(self.plc_controller.execute(command))
         control_ms = _elapsed_ms(control_started)
         self._mark_state(
@@ -127,6 +188,22 @@ class InspectionPipeline:
         if image is not None:
             return image
         return np.full((480, 640, 3), 245, dtype=np.uint8)
+
+    def _backup_multilight_sources(
+        self,
+        frame_packet: FramePacket,
+        backup_name: str,
+    ) -> tuple[str, float]:
+        backup_started = time.perf_counter()
+        backup_root = Path(self.runtime.backup_dir) / f"{Path(backup_name).stem}_multilight"
+        backup_root.mkdir(parents=True, exist_ok=True)
+        for light_name, path in frame_packet.light_paths.items():
+            source = Path(path)
+            shutil.copy2(source, backup_root / f"{light_name}{source.suffix}")
+        source_path = Path(frame_packet.source_path)
+        if source_path.exists() and source_path.suffix.lower() == ".json":
+            shutil.copy2(source_path, backup_root / "manifest.json")
+        return str(backup_root.resolve()), _elapsed_ms(backup_started)
 
     def _build_timeout_result(self, timeout_context: TimedOutBagContext) -> InspectionResult:
         started = time.perf_counter()
@@ -216,19 +293,32 @@ class InspectionPipeline:
             self._mark_state(trace, PipelineState.RECEIVED, f"frame_id={frame_packet.frame_id}")
             self._mark_state(trace, PipelineState.ENQUEUED, f"bag_id={frame_packet.bag_id}")
             self._mark_state(trace, PipelineState.FILE_READY, frame_packet.source_path)
+            if frame_packet.is_multilight:
+                self._mark_state(
+                    trace,
+                    PipelineState.MULTILIGHT_READY,
+                    f"lights={','.join(frame_packet.light_paths)}",
+                )
 
             source = Path(frame_packet.source_path)
             backup_name = f"cam{frame_packet.camera_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{source.suffix}"
 
-            backup_started = time.perf_counter()
-            backup_path = Path(self.runtime.backup_dir) / backup_name
-            shutil.copy2(source, backup_path)
-            timings.backup_ms = _elapsed_ms(backup_started)
-            self._mark_state(trace, PipelineState.BACKED_UP, str(backup_path))
+            if frame_packet.is_multilight:
+                backup_path, timings.backup_ms = self._backup_multilight_sources(frame_packet, backup_name)
+                self._mark_state(trace, PipelineState.BACKED_UP, backup_path)
+            else:
+                backup_started = time.perf_counter()
+                backup_path = Path(self.runtime.backup_dir) / backup_name
+                shutil.copy2(source, backup_path)
+                timings.backup_ms = _elapsed_ms(backup_started)
+                self._mark_state(trace, PipelineState.BACKED_UP, str(backup_path))
 
             self._mark_state(trace, PipelineState.STAGE1_RUNNING)
             stage1_started = time.perf_counter()
-            stage1_image, stage1_boxes = self.primary_detector.detect(str(source))
+            if frame_packet.is_multilight:
+                stage1_image, stage1_boxes = self.primary_detector.detect_multilight(frame_packet.light_paths)
+            else:
+                stage1_image, stage1_boxes = self.primary_detector.detect(str(source))
             timings.stage1_inference_ms = _elapsed_ms(stage1_started)
             stage1_result = PerceptionResult(
                 stage_name="stage1",
@@ -239,7 +329,11 @@ class InspectionPipeline:
             )
             self._mark_state(trace, PipelineState.STAGE1_DONE, f"boxes={len(stage1_boxes)}")
 
-            should_run_stage2 = self.patch_config.enabled and not stage1_result.is_defect
+            should_run_stage2 = (
+                self.patch_config.enabled
+                and not stage1_result.is_defect
+                and not frame_packet.is_multilight
+            )
             stage2_result = PerceptionResult(
                 stage_name="stage2",
                 detector_backend=type(self.patch_detector).__name__,
@@ -297,7 +391,8 @@ class InspectionPipeline:
 
             execution_feedbacks, timings.control_ms = self._execute_commands(trace, control_commands)
 
-            result_image_path = Path(self.runtime.result_dir) / f"{backup_path.stem}_result.jpg"
+            backup_stem = Path(backup_path).stem
+            result_image_path = Path(self.runtime.result_dir) / f"{backup_stem}_result.jpg"
             cv2.imwrite(str(result_image_path), emit_image)
 
             result = InspectionResult(
@@ -310,7 +405,7 @@ class InspectionPipeline:
                 execution_feedbacks=execution_feedbacks,
                 timing_breakdown=timings,
                 state_trace=trace,
-                backup_path=str(backup_path.resolve()),
+                backup_path=str(Path(backup_path).resolve()),
                 result_image_path=str(result_image_path.resolve()),
                 image_base64=image_to_base64(emit_image),
             )

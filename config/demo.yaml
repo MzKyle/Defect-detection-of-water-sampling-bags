@@ -26,6 +26,13 @@ models:
     conf_thres: 0.2
     iou_thres: 0.3
 
+multilight:
+  enabled: false
+  light_order: [backlight, darkfield, polarized]
+  primary_light: backlight
+  # When enabled, watched camera directories consume JSON manifests instead of raw images.
+  manifest_suffixes: [".json", ".manifest"]
+
 patch_detection:
   enabled: true
   horizontal: 4

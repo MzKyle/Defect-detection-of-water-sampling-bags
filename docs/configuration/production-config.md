@@ -23,7 +23,8 @@ cameras:
 生产部署时建议确认：
 
 - 相机软件是否稳定落盘
-- 文件扩展名是否为 `.jpg/.jpeg/.png/.bmp`
+- 单图模式文件扩展名是否为 `.jpg/.jpeg/.png/.bmp`
+- 多光源模式是否由 burst 模块写入 JSON manifest
 - 目录权限是否允许 Python 进程读取
 - 相机命名是否能推断同一袋体的 `bag_id`
 
@@ -32,14 +33,20 @@ cameras:
 ```yaml
 models:
   primary:
-    backend: ultralytics
-    weights_path: artifacts/models/yolo11_primary_best.pt
+    backend: multilight_torch
+    weights_path: artifacts/models/multilight_yolo_feature_fusion.torchscript.pt
     encrypted_path:
     key_path:
     device: 0
     imgsz: 640
     conf_thres: 0.3
     iou_thres: 0.3
+    light_order: [backlight, darkfield, polarized]
+    primary_light: backlight
+    input_format: blchw
+    output_format: auto
+    output_normalized: false
+    class_names: [anomaly]
   patch:
     backend: ultralytics
     weights_path: artifacts/models/yolo11_patch_best.pt
@@ -49,6 +56,8 @@ models:
     iou_thres: 0.3
 ```
 
+`backend: multilight_torch` 表示 primary detector 接收三张图组成的一个样本，一次模型调用输出检测结果。`input_format: blchw` 对应 `[B, 3, 3, H, W]`；如导出模型使用通道堆叠输入，可改为 `input_format: bchw`，对应 `[B, 9, H, W]`。
+
 两种权重加载方式：
 
 | 方式 | 配置 |
@@ -57,6 +66,30 @@ models:
 | 加密权重 | `encrypted_path + key_path` |
 
 如果同时配置，优先使用 `weights_path`。
+
+## 多光源组包
+
+```yaml
+multilight:
+  enabled: true
+  light_order: [backlight, darkfield, polarized]
+  primary_light: backlight
+  manifest_suffixes: [".json", ".manifest"]
+```
+
+启用后，watch 目录只消费 manifest，不再把三张原始图分别送检。manifest 示例：
+
+```json
+{
+  "bag_id": "bag_0001",
+  "camera_id": 1,
+  "lights": {
+    "backlight": "bag_0001_cam1_backlight.jpg",
+    "darkfield": "bag_0001_cam1_darkfield.jpg",
+    "polarized": "bag_0001_cam1_polarized.jpg"
+  }
+}
+```
 
 ## PLC 配置
 

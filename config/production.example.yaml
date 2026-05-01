@@ -16,22 +16,37 @@ cameras:
 
 models:
   primary:
-    backend: ultralytics
-    # Use either weights_path or encrypted_path + key_path.
-    weights_path: artifacts/models/yolo11_primary_best.pt
+    # Multi-light feature-fusion model. The model receives one grouped sample:
+    # [B, 3, 3, H, W] by default, or [B, 9, H, W] when input_format is bchw.
+    backend: multilight_torch
+    weights_path: artifacts/models/multilight_yolo_feature_fusion.torchscript.pt
     encrypted_path:
     key_path:
     device: 0
     imgsz: 640
     conf_thres: 0.3
     iou_thres: 0.3
+    light_order: [backlight, darkfield, polarized]
+    primary_light: backlight
+    input_format: blchw
+    output_format: auto
+    output_normalized: false
+    class_names: [anomaly]
   patch:
+    # Patch detector is kept for single-image fallback. Multi-light grouped samples
+    # skip Stage 2 because the primary feature-fusion model already sees all lights.
     backend: ultralytics
     weights_path: artifacts/models/yolo11_patch_best.pt
     device: 0
     imgsz: 640
     conf_thres: 0.2
     iou_thres: 0.3
+
+multilight:
+  enabled: true
+  light_order: [backlight, darkfield, polarized]
+  primary_light: backlight
+  manifest_suffixes: [".json", ".manifest"]
 
 patch_detection:
   enabled: true

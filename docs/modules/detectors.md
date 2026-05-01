@@ -9,6 +9,7 @@
 | 方法 | 说明 |
 | --- | --- |
 | `detect(image_path)` | 整图检测，用于 Stage 1 |
+| `detect_multilight(light_image_paths)` | 多光源组检测，用于特征级融合模型 |
 | `detect_patches(image_path, patch_config)` | 网格复检，用于 Stage 2 |
 
 返回值统一为：
@@ -54,6 +55,41 @@ model = YOLO(model_path)
 - `conf_thres`: confidence 阈值
 - `iou_thres`: NMS IoU 阈值
 - `device`: GPU / CPU 设备
+
+## MultiLightTorchDetector
+
+`MultiLightTorchDetector` 用于背光、暗场、交叉偏振三图组包后的特征级融合推理：
+
+```yaml
+models:
+  primary:
+    backend: multilight_torch
+    weights_path: artifacts/models/multilight_yolo_feature_fusion.torchscript.pt
+    imgsz: 640
+    light_order: [backlight, darkfield, polarized]
+    primary_light: backlight
+    input_format: blchw
+```
+
+输入流程：
+
+```text
+backlight / darkfield / polarized 三张图
+  -> 尺寸校验
+  -> letterbox 到 imgsz
+  -> 打包为 [B, 3, 3, H, W] 或 [B, 9, H, W]
+  -> 一次调用模型
+  -> NMS 和坐标还原
+```
+
+支持两类常见输出：
+
+| 输出 | 说明 |
+| --- | --- |
+| `[N, 6]` 或 `[B, N, 6]` | `xyxy, confidence, class_id` |
+| `[N, 5 + nc]` 或 `[B, N, 5 + nc]` | YOLO raw 风格 `xywh, objectness, class_scores...` |
+
+生产实时链路启用 `multilight.enabled=true` 后，watch 目录应写入 JSON manifest，而不是让三张原始图分别进 pipeline。
 
 ## C++ 实时后端
 

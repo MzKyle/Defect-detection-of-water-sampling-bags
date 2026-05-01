@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from .multilight import DEFAULT_LIGHT_ORDER
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = ROOT_DIR / "config" / "demo.yaml"
@@ -48,6 +50,20 @@ class ModelConfig:
     imgsz: int = 640
     conf_thres: float = 0.3
     iou_thres: float = 0.3
+    light_order: list[str] = field(default_factory=lambda: list(DEFAULT_LIGHT_ORDER))
+    primary_light: str = "backlight"
+    input_format: str = "blchw"
+    output_format: str = "auto"
+    output_normalized: bool = False
+    class_names: list[str] = field(default_factory=lambda: ["anomaly"])
+
+
+@dataclass
+class MultiLightConfig:
+    enabled: bool = False
+    light_order: list[str] = field(default_factory=lambda: list(DEFAULT_LIGHT_ORDER))
+    primary_light: str = "backlight"
+    manifest_suffixes: list[str] = field(default_factory=lambda: [".json", ".manifest"])
 
 
 @dataclass
@@ -131,6 +147,7 @@ class Settings:
     correlation: CorrelationConfig
     repeat_detection: RepeatConfig
     runtime: RuntimeConfig
+    multilight: MultiLightConfig
 
     @property
     def camera_map(self) -> dict[int, CameraConfig]:
@@ -146,6 +163,12 @@ def _camera_from_dict(data: dict[str, Any]) -> CameraConfig:
 
 
 def _model_from_dict(data: dict[str, Any]) -> ModelConfig:
+    class_names = data.get("class_names", ["anomaly"])
+    if isinstance(class_names, dict):
+        class_names = [
+            str(value)
+            for _, value in sorted(class_names.items(), key=lambda item: int(item[0]))
+        ]
     return ModelConfig(
         backend=str(data.get("backend", "mock")),
         weights_path=_resolve_path(data.get("weights_path")),
@@ -155,6 +178,12 @@ def _model_from_dict(data: dict[str, Any]) -> ModelConfig:
         imgsz=int(data.get("imgsz", 640)),
         conf_thres=float(data.get("conf_thres", 0.3)),
         iou_thres=float(data.get("iou_thres", 0.3)),
+        light_order=[str(item) for item in data.get("light_order", DEFAULT_LIGHT_ORDER)],
+        primary_light=str(data.get("primary_light", "backlight")),
+        input_format=str(data.get("input_format", "blchw")),
+        output_format=str(data.get("output_format", "auto")),
+        output_normalized=bool(data.get("output_normalized", False)),
+        class_names=[str(item) for item in class_names],
     )
 
 
@@ -184,6 +213,9 @@ def load_settings(config_path: str | None = None) -> Settings:
     storage.sqlite_path = _resolve_path(storage.sqlite_path) or storage.sqlite_path
 
     plc = PLCConfig(**(raw.get("plc") or {}))
+    multilight = MultiLightConfig(**(raw.get("multilight") or {}))
+    multilight.light_order = [str(item) for item in multilight.light_order]
+    multilight.manifest_suffixes = [str(item) for item in multilight.manifest_suffixes]
     correlation = CorrelationConfig(**(raw.get("correlation") or {}))
     if not correlation.expected_camera_ids:
         correlation.expected_camera_ids = [camera.camera_id for camera in cameras]
@@ -209,4 +241,5 @@ def load_settings(config_path: str | None = None) -> Settings:
         correlation=correlation,
         repeat_detection=repeat_detection,
         runtime=runtime,
+        multilight=multilight,
     )

@@ -10,6 +10,7 @@
 | 袋体级多相机关联 | `correlation.py` | 将 A/B 面相机结果聚合为袋体决策 |
 | 重复缺陷识别 | `repeater.py` | 识别疑似玻璃/夹具污染造成的固定位置缺陷 |
 | YOLO 模型选型 | `train_*.py`, `benchmark_ultralytics_models.py` | 支撑 YOLOv8 / YOLO11 的工程选择 |
+| 多光源特征级融合 | `models/multilight_fusion.py` | 将背光、暗场、偏振在 P3/P4/P5 上做 cross-light Transformer Fusion |
 
 ## 端到端决策逻辑
 

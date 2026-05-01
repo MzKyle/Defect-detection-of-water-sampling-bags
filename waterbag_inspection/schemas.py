@@ -34,6 +34,7 @@ def build_frame_packet(
     replayed: bool = False,
     bag_id: str | None = None,
     metadata: dict[str, Any] | None = None,
+    light_paths: dict[str, str] | None = None,
 ) -> "FramePacket":
     timestamp = now_iso()
     return FramePacket(
@@ -47,6 +48,7 @@ def build_frame_packet(
         enqueued_at=timestamp,
         replayed=replayed,
         metadata=metadata or {},
+        light_paths=light_paths or {},
     )
 
 
@@ -74,6 +76,7 @@ class PipelineState(str, Enum):
     RECEIVED = "received"
     ENQUEUED = "enqueued"
     FILE_READY = "file_ready"
+    MULTILIGHT_READY = "multilight_ready"
     BACKED_UP = "backed_up"
     STAGE1_RUNNING = "stage1_running"
     STAGE1_DONE = "stage1_done"
@@ -115,6 +118,11 @@ class FramePacket:
     processing_started_at: str | None = None
     source_mtime_ns: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    light_paths: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def is_multilight(self) -> bool:
+        return bool(self.light_paths)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -131,6 +139,7 @@ class FramePacket:
             "processing_started_at": self.processing_started_at,
             "source_mtime_ns": self.source_mtime_ns,
             "metadata": self.metadata,
+            "light_paths": self.light_paths,
         }
 
 
@@ -476,4 +485,5 @@ class InspectionResult:
             "timing_breakdown": self.timing_breakdown.to_dict(),
             "result_image_path": self.result_image_path,
             "backup_path": self.backup_path,
+            "light_paths": self.frame_packet.light_paths,
         }
