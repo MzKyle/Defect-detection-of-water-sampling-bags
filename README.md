@@ -7,8 +7,6 @@
 [![Docs](https://img.shields.io/badge/docs-available-0A66C2?logo=readthedocs&logoColor=white)](docs/README.md)
 [![Pipeline](https://img.shields.io/badge/pipeline-perception--decision--actuation-2E8B57)](docs/architecture/README.md)
 
-Waterbag Inspection 是一个面向工业水样采集袋缺陷检测场景的开源演示项目。它不是单纯展示某个 YOLO 模型，而是把一条完整的感知-决策-执行链路整理成了可运行、可复现、可扩展的工程样板。
-
 
 - 双相机输入
 - 三光源 manifest 组包与多光源特征级融合推理
