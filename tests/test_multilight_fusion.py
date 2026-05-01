@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("torch")
+
 import torch
 from torch import nn
 
