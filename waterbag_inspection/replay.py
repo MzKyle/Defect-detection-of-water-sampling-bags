@@ -14,7 +14,9 @@ def collect_replay_packets(settings: Settings, source_root: str, limit: int | No
     entries: list[tuple[str, int, str, Path, dict[str, str]]] = []
     for camera in settings.cameras:
         candidate_dir = root / f"camera{camera.camera_id}"
-        source_dir = candidate_dir if candidate_dir.exists() else Path(camera.watch_dir)
+        source_dir = candidate_dir if candidate_dir.is_dir() else Path(camera.watch_dir)
+        if not source_dir.is_dir():
+            continue
         if settings.multilight.enabled:
             for manifest_path in sorted(
                 path
