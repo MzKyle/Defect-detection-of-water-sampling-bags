@@ -123,9 +123,11 @@ runtime:
   file_ready_timeout_seconds: 5.0
   file_stable_seconds: 0.3
   queue_poll_interval_seconds: 0.2
+  async_artifact_writes: false
+  artifact_queue_size: 128
 ```
 
-这些参数决定目录监听和 worker 处理节奏。
+这些参数决定目录监听、worker 处理节奏和备份/结果图落盘方式。Demo 默认同步落盘，生产配置建议开启 `async_artifact_writes`。
 
 ## C++ 后端配置
 
@@ -137,7 +139,7 @@ C++ 实时链路使用 [config/cpp_backend/demo.ini](../../config/cpp_backend/de
 | --- | --- |
 | `service` | 服务自动启动和运行时长 |
 | `logging` | 日志级别、控制台输出和文件输出 |
-| `storage` | JSONL 留档路径 |
+| `storage` | JSONL 留档路径和异步写入队列 |
 | `detector.presence` / `detector.primary` / `detector.patch` | 三路 detector 配置，支持 mock 或 onnxruntime_cuda |
 | `runtime` | 目录监听、队列、worker 和超时 |
 | `detection` | presence / patch 阈值 |
@@ -158,3 +160,14 @@ backend = mock
 ```
 
 `detector.presence` 和 `detector.patch` 使用同样的字段结构。对应的 C++ 实时后端说明见 [cpp_backend/README.md](../../cpp_backend/README.md)。
+
+C++ 后端默认启用异步 JSONL 写入：
+
+```ini
+[storage]
+async_result_writes = true
+result_queue_capacity = 512
+drop_results_when_full = true
+```
+
+单 GPU 推理时，`defect_worker_count` 不等于实际加速倍数；建议用 1、2、4 分别压测 P95/P99，再选择现场配置。

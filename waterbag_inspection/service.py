@@ -112,6 +112,7 @@ class InspectionRuntime:
             self.worker_thread = None
 
         self.running = False
+        self.pipeline.close()
         LOGGER.info("Inspection runtime stopped.")
 
     def submit_path(self, camera_id: int, path: str) -> None:

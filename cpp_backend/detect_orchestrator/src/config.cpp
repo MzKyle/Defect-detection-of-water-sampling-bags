@@ -202,6 +202,9 @@ AppConfig load_app_config(const std::filesystem::path& path) {
     config.plc.mock_ack_latency = ini.get_ms("plc", "mock_ack_latency_ms", config.plc.mock_ack_latency);
 
     config.storage.result_jsonl = ini.get("storage", "result_jsonl", config.storage.result_jsonl.string());
+    config.storage.async_result_writes = ini.get_bool("storage", "async_result_writes", config.storage.async_result_writes);
+    config.storage.result_queue_capacity = ini.get_size("storage", "result_queue_capacity", config.storage.result_queue_capacity);
+    config.storage.drop_results_when_full = ini.get_bool("storage", "drop_results_when_full", config.storage.drop_results_when_full);
 
     config.logger.level = parse_log_level(ini.get("logging", "level", "info"));
     config.logger.console = ini.get_bool("logging", "console", config.logger.console);

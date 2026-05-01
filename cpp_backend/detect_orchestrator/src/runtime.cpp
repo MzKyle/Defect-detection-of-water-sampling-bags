@@ -46,6 +46,11 @@ void RealtimeRuntime::start() {
         stop_requested_ = false;
         running_ = true;
     }
+    {
+        std::lock_guard<std::mutex> sort_lock(sort_mutex_);
+        sort_stop_requested_ = false;
+        sort_queue_.clear();
+    }
 
     for (const auto& camera : config_.cameras) {
         std::filesystem::create_directories(camera.watch_dir);
@@ -62,6 +67,7 @@ void RealtimeRuntime::start() {
 
     poll_thread_ = std::thread(&RealtimeRuntime::poll_loop, this);
     worker_thread_ = std::thread(&RealtimeRuntime::worker_loop, this);
+    sorter_thread_ = std::thread(&RealtimeRuntime::sorter_loop, this);
     for (std::size_t i = 0; i < worker_count; ++i) {
         defect_threads_.emplace_back(&RealtimeRuntime::defect_worker_loop, this, i);
     }
@@ -92,6 +98,14 @@ void RealtimeRuntime::stop() {
             thread.join();
         }
     }
+    {
+        std::lock_guard<std::mutex> lock(sort_mutex_);
+        sort_stop_requested_ = true;
+    }
+    sort_cv_.notify_all();
+    if (sorter_thread_.joinable()) {
+        sorter_thread_.join();
+    }
     defect_threads_.clear();
     defect_workers_.clear();
 }
@@ -108,7 +122,7 @@ void RealtimeRuntime::submit_path(int camera_id, const std::filesystem::path& pa
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (queue_.size() >= config_.queue_capacity) {
-            queue_.erase(queue_.begin());
+            queue_.pop_front();
         }
         queue_.push_back(std::move(packet));
     }
@@ -125,7 +139,7 @@ void RealtimeRuntime::submit_defect_packet(FramePacket packet) {
         }
         worker = defect_workers_[worker_index].get();
         if (worker->queue.size() >= config_.queue_capacity) {
-            worker->queue.erase(worker->queue.begin());
+            worker->queue.pop_front();
         }
         packet.metadata["defect_worker_index"] = std::to_string(worker_index);
         worker->queue.push_back(std::move(packet));
@@ -189,7 +203,7 @@ void RealtimeRuntime::worker_loop() {
             }
             if (!queue_.empty()) {
                 packet = std::move(queue_.front());
-                queue_.erase(queue_.begin());
+                queue_.pop_front();
                 has_packet = true;
             }
         }
@@ -240,7 +254,7 @@ void RealtimeRuntime::defect_worker_loop(std::size_t worker_index) {
             }
             if (!shard.queue.empty()) {
                 packet = std::move(shard.queue.front());
-                shard.queue.erase(shard.queue.begin());
+                shard.queue.pop_front();
                 has_packet = true;
             }
         }
@@ -258,6 +272,31 @@ void RealtimeRuntime::defect_worker_loop(std::size_t worker_index) {
             handle_defect_result(timeout_result);
         }
         collect_and_publish_pending_results();
+    }
+}
+
+void RealtimeRuntime::sorter_loop() {
+    while (true) {
+        InspectionResult result;
+        bool has_result = false;
+        {
+            std::unique_lock<std::mutex> lock(sort_mutex_);
+            sort_cv_.wait(lock, [&] {
+                return sort_stop_requested_ || !sort_queue_.empty();
+            });
+            if (sort_stop_requested_ && sort_queue_.empty()) {
+                break;
+            }
+            if (!sort_queue_.empty()) {
+                result = std::move(sort_queue_.front());
+                sort_queue_.pop_front();
+                has_result = true;
+            }
+        }
+
+        if (has_result) {
+            publish(pipeline_->execute_sort_command(std::move(result)));
+        }
     }
 }
 
@@ -291,8 +330,20 @@ void RealtimeRuntime::collect_and_publish_pending_results() {
 
 void RealtimeRuntime::publish_sorted_results(std::vector<InspectionResult> results) {
     for (auto& result : results) {
-        publish(pipeline_->execute_sort_command(std::move(result)));
+        enqueue_sort_result(std::move(result));
     }
+}
+
+void RealtimeRuntime::enqueue_sort_result(InspectionResult result) {
+    {
+        std::lock_guard<std::mutex> lock(sort_mutex_);
+        if (sort_queue_.size() >= config_.queue_capacity) {
+            sort_queue_.pop_front();
+            result.state_trace.push_back("sort_queue_dropped_oldest");
+        }
+        sort_queue_.push_back(std::move(result));
+    }
+    sort_cv_.notify_one();
 }
 
 std::size_t RealtimeRuntime::defect_worker_index_for_bag(const std::string& bag_id) const {

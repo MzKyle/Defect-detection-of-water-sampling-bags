@@ -168,6 +168,26 @@ void test_jsonl_storage_contains_presence_fields() {
     assert(line.find("unified_hardware_clock") != std::string::npos);
 }
 
+void test_jsonl_storage_can_write_asynchronously() {
+    auto pipeline = make_pipeline();
+    waterbag::CameraConfig camera{1, "A-camera", "camera1"};
+    const auto root = std::filesystem::temp_directory_path() / "waterbag_cpp_tests";
+    const auto result_path = root / "async_results.jsonl";
+    std::filesystem::remove(result_path);
+
+    auto packet = waterbag::make_frame_packet(camera, make_file(root / "bag_201_cam1_defect.jpg"));
+    auto result = pipeline->process_packet(packet);
+    waterbag::JsonlResultRepository repo(result_path, true, 8, true);
+    repo.save(result);
+    repo.close();
+
+    std::ifstream input(result_path);
+    std::string line;
+    std::getline(input, line);
+    assert(line.find("\"bag_id\":\"bag_201\"") != std::string::npos);
+    assert(repo.dropped_results() == 0);
+}
+
 void test_burst_alignment_uses_unified_hardware_clock() {
     waterbag::CameraConfig camera{1, "A-camera", "camera1"};
     const auto root = std::filesystem::temp_directory_path() / "waterbag_cpp_tests";
@@ -294,6 +314,9 @@ void test_config_loads_presence_settings() {
     assert(config.runtime.expected_burst_images_per_camera == 3);
     assert(config.runtime.bag_capture_timeout == waterbag::Milliseconds{1500});
     assert(config.runtime.sort_result_timeout == waterbag::Milliseconds{1500});
+    assert(config.storage.async_result_writes);
+    assert(config.storage.result_queue_capacity == 512);
+    assert(config.storage.drop_results_when_full);
     assert(config.runtime.cameras.size() == 2);
 }
 
@@ -303,6 +326,7 @@ int main() {
     test_presence_gate_skips_empty_frame();
     test_presence_triggers_lever_actions_before_defect_decision();
     test_jsonl_storage_contains_presence_fields();
+    test_jsonl_storage_can_write_asynchronously();
     test_burst_alignment_uses_unified_hardware_clock();
     test_station_packet_exports_burst_images_for_defect_worker();
     test_defect_detection_fuses_multi_light_burst_inputs();

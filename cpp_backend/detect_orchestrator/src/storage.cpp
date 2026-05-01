@@ -123,20 +123,103 @@ void write_feedbacks(std::ostringstream& out, const std::vector<ExecutionFeedbac
 
 }  // namespace
 
-JsonlResultRepository::JsonlResultRepository(std::filesystem::path path) : path_(std::move(path)) {
+JsonlResultRepository::JsonlResultRepository(
+    std::filesystem::path path,
+    bool async_writes,
+    std::size_t queue_capacity,
+    bool drop_when_full)
+    : path_(std::move(path)),
+      async_writes_(async_writes),
+      queue_capacity_(std::max<std::size_t>(1, queue_capacity)),
+      drop_when_full_(drop_when_full) {
     if (!path_.parent_path().empty()) {
         std::filesystem::create_directories(path_.parent_path());
     }
+    if (async_writes_) {
+        writer_thread_ = std::thread(&JsonlResultRepository::writer_loop, this);
+    }
+}
+
+JsonlResultRepository::~JsonlResultRepository() {
+    close();
 }
 
 void JsonlResultRepository::save(const InspectionResult& result) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::ofstream out(path_, std::ios::app);
-    out << inspection_result_to_json(result) << '\n';
+    auto line = inspection_result_to_json(result);
+    if (!async_writes_) {
+        append_line(line);
+        return;
+    }
+
+    std::unique_lock<std::mutex> lock(queue_mutex_);
+    if (stop_requested_) {
+        lock.unlock();
+        append_line(line);
+        return;
+    }
+    if (drop_when_full_) {
+        if (queue_.size() >= queue_capacity_) {
+            queue_.pop_front();
+            ++dropped_results_;
+        }
+    } else {
+        cv_.wait(lock, [&] {
+            return stop_requested_ || queue_.size() < queue_capacity_;
+        });
+        if (stop_requested_) {
+            return;
+        }
+    }
+    queue_.push_back(std::move(line));
+    lock.unlock();
+    cv_.notify_one();
+}
+
+void JsonlResultRepository::close() {
+    if (!async_writes_) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        stop_requested_ = true;
+    }
+    cv_.notify_all();
+    if (writer_thread_.joinable()) {
+        writer_thread_.join();
+    }
 }
 
 const std::filesystem::path& JsonlResultRepository::path() const {
     return path_;
+}
+
+std::size_t JsonlResultRepository::dropped_results() const {
+    return dropped_results_.load();
+}
+
+void JsonlResultRepository::append_line(const std::string& line) {
+    std::lock_guard<std::mutex> lock(file_mutex_);
+    std::ofstream out(path_, std::ios::app);
+    out << line << '\n';
+}
+
+void JsonlResultRepository::writer_loop() {
+    while (true) {
+        std::string line;
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex_);
+            cv_.wait(lock, [&] {
+                return stop_requested_ || !queue_.empty();
+            });
+            if (queue_.empty() && stop_requested_) {
+                break;
+            }
+            line = std::move(queue_.front());
+            queue_.pop_front();
+        }
+        cv_.notify_all();
+        append_line(line);
+    }
 }
 
 std::string inspection_result_to_json(const InspectionResult& result) {

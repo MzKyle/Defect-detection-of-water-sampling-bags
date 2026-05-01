@@ -9,11 +9,13 @@
 | `received` | 收到或构造 `FramePacket` |
 | `enqueued` | 进入处理队列 |
 | `file_ready` | 文件已稳定可读 |
-| `backed_up` | 原图已备份 |
+| `multilight_ready` | 多光源 manifest 和三张光源图已就绪 |
+| `backed_up` | 原图备份已完成或已调度到异步 artifact 队列 |
 | `stage1_running` | Stage 1 整图检测开始 |
 | `stage1_done` | Stage 1 完成 |
 | `stage2_running` | Stage 2 网格复检开始 |
 | `stage2_done` | Stage 2 完成 |
+| `visibility_assessed` | 多光源可见性矩阵 shadow 评估完成 |
 | `decision_ready` | 决策结果已生成 |
 | `command_dispatched` | 控制命令已发送 |
 | `command_acked` | 收到 Ack 或重试结束 |
@@ -27,13 +29,18 @@ stateDiagram-v2
     [*] --> received
     received --> enqueued
     enqueued --> file_ready
+    file_ready --> multilight_ready: 多光源 manifest
     file_ready --> backed_up
+    multilight_ready --> backed_up
     backed_up --> stage1_running
     stage1_running --> stage1_done
     stage1_done --> stage2_running: Stage 1 未命中且启用 patch
     stage2_running --> stage2_done
     stage1_done --> decision_ready: Stage 1 命中或跳过 Stage 2
-    stage2_done --> decision_ready
+    stage2_done --> visibility_assessed: 多光源 shadow 评估
+    stage1_done --> visibility_assessed: 多光源且跳过 Stage 2
+    visibility_assessed --> decision_ready
+    stage2_done --> decision_ready: 非多光源
     decision_ready --> command_dispatched: finalized 且需要新命令
     command_dispatched --> command_acked
     decision_ready --> persisted: 未 finalized 或不需新命令

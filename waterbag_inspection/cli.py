@@ -70,6 +70,49 @@ def _build_parser() -> argparse.ArgumentParser:
         help="clear repeat history before running",
     )
 
+    visibility_parser = subparsers.add_parser(
+        "assess-visibility",
+        help="score one defect candidate against the multi-light visibility matrix",
+    )
+    visibility_parser.add_argument("--config", help="path to YAML config file")
+    visibility_parser.add_argument("--matrix", help="visibility matrix YAML path")
+    visibility_parser.add_argument(
+        "--defect-type",
+        required=True,
+        help="defect type or alias",
+    )
+    visibility_parser.add_argument(
+        "--backlight",
+        type=float,
+        required=True,
+        help="0-1 response score",
+    )
+    visibility_parser.add_argument(
+        "--darkfield",
+        type=float,
+        required=True,
+        help="0-1 response score",
+    )
+    visibility_parser.add_argument(
+        "--polarized",
+        type=float,
+        required=True,
+        help="0-1 response score",
+    )
+    visibility_parser.add_argument(
+        "--consistency",
+        type=float,
+        default=0.0,
+        help="0-1 position consistency score",
+    )
+    visibility_parser.add_argument("--confidence", type=float, help="0-1 model confidence")
+    visibility_parser.add_argument(
+        "--cue",
+        action="append",
+        default=[],
+        help="morphology cue, repeatable, e.g. --cue slender --cue high_aspect_ratio",
+    )
+
     replay_parser = subparsers.add_parser(
         "replay",
         help="replay a directory of historical images through the pipeline",
@@ -204,6 +247,30 @@ def _run_inspect_multilight(
     print(json.dumps(result.to_summary_dict(), ensure_ascii=False, indent=2))
 
 
+def _run_assess_visibility(
+    config: str | None,
+    matrix_path: str | None,
+    defect_type: str,
+    light_scores: dict[str, float],
+    consistency: float,
+    confidence: float | None,
+    cues: list[str],
+) -> None:
+    from .visibility_matrix import assess_visibility_evidence, load_visibility_matrix
+
+    settings = load_settings(config)
+    matrix = load_visibility_matrix(matrix_path or settings.multilight.visibility_matrix_path)
+    assessment = assess_visibility_evidence(
+        matrix,
+        defect_type,
+        light_scores,
+        consistency_score=consistency,
+        morphology_cues=cues,
+        model_confidence=confidence,
+    )
+    print(json.dumps(assessment.to_dict(), ensure_ascii=False, indent=2))
+
+
 def _run_replay(
     config: str | None,
     source_root: str,
@@ -301,6 +368,22 @@ def main(argv: list[str] | None = None) -> None:
         )
         return
 
+    if args.command == "assess-visibility":
+        _run_assess_visibility(
+            args.config,
+            args.matrix,
+            args.defect_type,
+            {
+                "backlight": args.backlight,
+                "darkfield": args.darkfield,
+                "polarized": args.polarized,
+            },
+            args.consistency,
+            args.confidence,
+            args.cue,
+        )
+        return
+
     if args.command == "replay":
         _run_replay(
             args.config,
@@ -316,3 +399,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     parser.error(f"Unsupported command: {args.command}")
+
+
+if __name__ == "__main__":
+    main()

@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from .multilight import DEFAULT_LIGHT_ORDER
+from .visibility_matrix import DEFAULT_VISIBILITY_MATRIX_PATH
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -64,6 +65,9 @@ class MultiLightConfig:
     light_order: list[str] = field(default_factory=lambda: list(DEFAULT_LIGHT_ORDER))
     primary_light: str = "backlight"
     manifest_suffixes: list[str] = field(default_factory=lambda: [".json", ".manifest"])
+    visibility_matrix_path: str = str(DEFAULT_VISIBILITY_MATRIX_PATH.relative_to(ROOT_DIR))
+    visibility_assessment_enabled: bool = True
+    visibility_assessment_mode: str = "shadow"
 
 
 @dataclass
@@ -133,6 +137,10 @@ class RuntimeConfig:
     file_ready_timeout_seconds: float = 5.0
     file_stable_seconds: float = 0.3
     queue_poll_interval_seconds: float = 0.2
+    async_artifact_writes: bool = False
+    artifact_queue_size: int = 128
+    artifact_drop_when_full: bool = True
+    artifact_flush_timeout_seconds: float = 2.0
 
 
 @dataclass
@@ -216,6 +224,10 @@ def load_settings(config_path: str | None = None) -> Settings:
     multilight = MultiLightConfig(**(raw.get("multilight") or {}))
     multilight.light_order = [str(item) for item in multilight.light_order]
     multilight.manifest_suffixes = [str(item) for item in multilight.manifest_suffixes]
+    multilight.visibility_matrix_path = (
+        _resolve_path(multilight.visibility_matrix_path)
+        or multilight.visibility_matrix_path
+    )
     correlation = CorrelationConfig(**(raw.get("correlation") or {}))
     if not correlation.expected_camera_ids:
         correlation.expected_camera_ids = [camera.camera_id for camera in cameras]

@@ -42,7 +42,7 @@ python -m waterbag_inspection replay \
 
 ## 3. 接入真实模型
 
-修改配置：
+单图二阶段模式可以修改配置为：
 
 ```yaml
 models:
@@ -54,6 +54,17 @@ models:
     weights_path: artifacts/models/patch_best.pt
 ```
 
+多光源特征级融合模式使用生产模板中的 `multilight_torch`：
+
+```yaml
+models:
+  primary:
+    backend: multilight_torch
+    weights_path: artifacts/models/multilight_yolo_feature_fusion.torchscript.pt
+multilight:
+  enabled: true
+```
+
 先通过单图验证：
 
 ```bash
@@ -61,6 +72,15 @@ python -m waterbag_inspection inspect \
   --config config/production.example.yaml \
   --camera-id 1 \
   --image real_replay/camera1/sample.jpg
+```
+
+多光源模型先通过 manifest 验证：
+
+```bash
+python -m waterbag_inspection inspect-multilight \
+  --config config/production.example.yaml \
+  --camera-id 1 \
+  --manifest real_replay/camera1/bag_0001_cam1.json
 ```
 
 ## 4. 接入相机目录

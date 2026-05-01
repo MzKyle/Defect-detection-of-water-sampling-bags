@@ -91,6 +91,7 @@ detection_results
 | `decision_action` | accept / reject / await_peer_camera |
 | `decision_reason` | 决策原因 |
 | `bag_summary` | 袋体级聚合 JSON |
+| `stage1_boxes`, `stage2_boxes`, `final_boxes` | 检测框 JSON；多光源 shadow 评估会挂在 `visibility_assessment` 字段 |
 | `control_commands` | 控制命令 JSON |
 | `execution_feedbacks` | PLC 反馈 JSON |
 | `state_trace` | 状态轨迹 JSON |

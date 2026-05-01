@@ -31,6 +31,7 @@ def build_pipeline_components(config_path: str | None = None):
         plc_controller=build_plc_controller(settings.plc),
         primary_detector=build_detector(settings.primary_model),
         patch_detector=build_detector(settings.patch_model),
+        multilight_config=settings.multilight,
     )
     return settings, repository, pipeline
 

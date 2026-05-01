@@ -25,6 +25,8 @@
   - [袋体级多相机关联](algorithms/bag-correlation.md)
   - [重复缺陷识别](algorithms/repeat-defect.md)
   - [YOLOv8 / YOLO11 选型](algorithms/model-selection.md)
+  - [多光源特征级融合](algorithms/feature-level-multilight-fusion.md)
+  - [多光源可见性矩阵](algorithms/multilight-visibility-matrix.md)
 
 - **配置指南**
   - [Demo 配置](configuration/demo-config.md)

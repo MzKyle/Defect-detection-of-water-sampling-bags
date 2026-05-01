@@ -30,6 +30,9 @@ multilight:
   enabled: false
   light_order: [backlight, darkfield, polarized]
   primary_light: backlight
+  visibility_matrix_path: config/multilight_visibility_matrix.yaml
+  visibility_assessment_enabled: true
+  visibility_assessment_mode: shadow
   # When enabled, watched camera directories consume JSON manifests instead of raw images.
   manifest_suffixes: [".json", ".manifest"]
 
@@ -91,3 +94,7 @@ runtime:
   file_ready_timeout_seconds: 5.0
   file_stable_seconds: 0.3
   queue_poll_interval_seconds: 0.2
+  async_artifact_writes: false
+  artifact_queue_size: 128
+  artifact_drop_when_full: true
+  artifact_flush_timeout_seconds: 2.0

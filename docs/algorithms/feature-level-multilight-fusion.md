@@ -136,6 +136,8 @@ multilight:
 
 `input_format=blchw` 表示模型输入为 `[B, 3, 3, H, W]`；如果导出模型需要 `[B, 9, H, W]`，可改成 `input_format: bchw`。
 
+多光源缺陷可见性矩阵配置在 `config/multilight_visibility_matrix.yaml`。它不替代模型推理，而是用于离线评估、误杀分析和 fusion 权重诊断；详细说明见 `docs/algorithms/multilight-visibility-matrix.md`。
+
 ## 落地顺序
 
 1. 先生成多光源分组数据集，每个样本固定包含 `backlight`、`darkfield`、`polarized` 三张对齐图。

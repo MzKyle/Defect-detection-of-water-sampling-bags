@@ -11,6 +11,7 @@
 | 重复缺陷识别 | `repeater.py` | 识别疑似玻璃/夹具污染造成的固定位置缺陷 |
 | YOLO 模型选型 | `train_*.py`, `benchmark_ultralytics_models.py` | 支撑 YOLOv8 / YOLO11 的工程选择 |
 | 多光源特征级融合 | `models/multilight_fusion.py` | 将背光、暗场、偏振在 P3/P4/P5 上做 cross-light Transformer Fusion |
+| 多光源可见性矩阵 | `visibility_matrix.py`, `config/multilight_visibility_matrix.yaml` | 评估不同缺陷的光源证据链，辅助误杀分析和 fusion 诊断 |
 
 ## 端到端决策逻辑
 

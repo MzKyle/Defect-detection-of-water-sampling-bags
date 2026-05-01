@@ -13,24 +13,25 @@ graph TB
     end
 
     subgraph L3["运行编排层"]
-        RT["InspectionRuntime<br/>watchdog / queue / worker"]
+        RT["InspectionRuntime<br/>watchdog / manifest / queue / worker"]
         REP["Replay Runner"]
         FI["Fault Injection"]
     end
 
     subgraph L2["感知决策层"]
         PIPE["InspectionPipeline"]
-        DET["Detector Backend<br/>Python Mock / Ultralytics<br/>C++ ONNX Runtime CUDA"]
+        DET["Detector Backend<br/>Python Mock / Ultralytics / MultiLight<br/>C++ ONNX Runtime CUDA"]
         COR["BagCorrelator"]
         RPT["RepeatDefectTracker"]
         POL["DecisionPolicy"]
+        VIS["VisibilityMatrix"]
     end
 
     subgraph L1["设备与持久化层"]
         CAM["Camera Directories"]
         PLC["PLC Controller"]
         DB["SQLite Repository"]
-        FS["Artifacts Files"]
+        FS["ArtifactWriter / Artifact Files"]
     end
 
     CAM --> RT
@@ -45,6 +46,7 @@ graph TB
     PIPE --> COR
     PIPE --> RPT
     PIPE --> POL
+    PIPE --> VIS
     PIPE --> PLC
     PIPE --> DB
     PIPE --> FS
@@ -60,10 +62,10 @@ graph TB
 
 | 组件 | 职责 |
 | --- | --- |
-| 相机目录 | 接收工业相机落盘图片 |
+| 相机目录 | 接收工业相机落盘图片；多光源模式接收 JSON manifest |
 | PLC Controller | 将判定结果转为执行指令，支持 Ack/重试 |
 | SQLite Repository | 保存检测结果、指标和诊断数据 |
-| artifacts 文件 | 保存备份图、结果图、patch 可视化和故障注入产物 |
+| artifacts 文件 | 保存备份图、结果图、patch 可视化和故障注入产物；生产可异步写入 |
 
 ### 感知决策层
 
@@ -71,14 +73,16 @@ graph TB
 
 | 组件 | 职责 |
 | --- | --- |
-| `InspectionPipeline` | 串联备份、检测、关联、控制、留档 |
-| `BaseDetector` | 检测器接口 |
+| `InspectionPipeline` | 串联备份调度、检测、关联、控制、留档 |
+| `BaseDetector` | 检测器接口，包含单图和多光源组检测入口 |
 | `MockDetector` | 基于文件名的 mock 检测器 |
 | `UltralyticsDetector` | YOLOv8 / YOLO11 推理后端 |
+| `MultiLightTorchDetector` | 背光、暗场、交叉偏振组包后的特征级融合模型后端 |
 | `OnnxRuntimeDetector` | C++ 实时后端的 ONNX Runtime CUDA 检测器 |
 | `BagCorrelator` | 多相机袋体级聚合 |
 | `RepeatDefectTracker` | 重复缺陷 IoU 判定 |
 | `DefaultDecisionPolicy` | 决策与控制命令生成 |
+| `VisibilityMatrix` | 多光源证据链 shadow 评估 |
 
 ### 运行编排层
 
@@ -86,7 +90,7 @@ graph TB
 
 | 组件 | 职责 |
 | --- | --- |
-| `InspectionRuntime` | 监听相机目录，等待文件稳定，队列化处理 |
+| `InspectionRuntime` | 监听相机目录或多光源 manifest，等待文件稳定，队列化处理 |
 | `replay` | 按历史目录构造 `FramePacket` 并复用 pipeline |
 | `fault_injection` | 离线构造 timeout、ack-retry、out-of-order 场景 |
 
