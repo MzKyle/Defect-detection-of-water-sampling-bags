@@ -193,7 +193,11 @@ int main(int argc, char** argv) {
         waterbag::Logger::instance().info("loaded config: " + config_path.string());
         waterbag::Logger::instance().info("defect_worker_count=" + std::to_string(config.runtime.defect_worker_count));
 
-        waterbag::JsonlResultRepository repository(config.storage.result_jsonl);
+        waterbag::JsonlResultRepository repository(
+            config.storage.result_jsonl,
+            config.storage.async_result_writes,
+            config.storage.result_queue_capacity,
+            config.storage.drop_results_when_full);
         auto pipeline = build_pipeline(config);
 
         if (once || !watch) {

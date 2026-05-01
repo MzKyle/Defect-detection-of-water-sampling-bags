@@ -60,9 +60,10 @@ class DetectionBox:
     y2: int
     label: str
     confidence: float
+    visibility_assessment: dict[str, Any] | None = None
 
-    def to_dict(self) -> dict[str, int | float | str]:
-        return {
+    def to_dict(self) -> dict[str, Any]:
+        payload = {
             "x1": self.x1,
             "y1": self.y1,
             "x2": self.x2,
@@ -70,6 +71,9 @@ class DetectionBox:
             "label": self.label,
             "confidence": self.confidence,
         }
+        if self.visibility_assessment is not None:
+            payload["visibility_assessment"] = self.visibility_assessment
+        return payload
 
 
 class PipelineState(str, Enum):
@@ -82,6 +86,7 @@ class PipelineState(str, Enum):
     STAGE1_DONE = "stage1_done"
     STAGE2_RUNNING = "stage2_running"
     STAGE2_DONE = "stage2_done"
+    VISIBILITY_ASSESSED = "visibility_assessed"
     DECISION_READY = "decision_ready"
     COMMAND_DISPATCHED = "command_dispatched"
     COMMAND_ACKED = "command_acked"
@@ -328,6 +333,7 @@ class TimingBreakdown:
     backup_ms: float = 0.0
     stage1_inference_ms: float = 0.0
     stage2_inference_ms: float = 0.0
+    visibility_assessment_ms: float = 0.0
     decision_ms: float = 0.0
     correlation_ms: float = 0.0
     control_ms: float = 0.0
@@ -340,6 +346,7 @@ class TimingBreakdown:
             "backup_ms": self.backup_ms,
             "stage1_inference_ms": self.stage1_inference_ms,
             "stage2_inference_ms": self.stage2_inference_ms,
+            "visibility_assessment_ms": self.visibility_assessment_ms,
             "decision_ms": self.decision_ms,
             "correlation_ms": self.correlation_ms,
             "control_ms": self.control_ms,
@@ -384,16 +391,24 @@ class InspectionResult:
         return self.frame_packet.source_path
 
     @property
-    def stage1_boxes(self) -> list[dict[str, int | float | str]]:
+    def stage1_boxes(self) -> list[dict[str, Any]]:
         return [box.to_dict() for box in self.stage1_result.boxes]
 
     @property
-    def stage2_boxes(self) -> list[dict[str, int | float | str]]:
+    def stage2_boxes(self) -> list[dict[str, Any]]:
         return [box.to_dict() for box in self.stage2_result.boxes]
 
     @property
-    def final_boxes(self) -> list[dict[str, int | float | str]]:
+    def final_boxes(self) -> list[dict[str, Any]]:
         return [box.to_dict() for box in self.decision_result.final_boxes]
+
+    @property
+    def visibility_assessments(self) -> list[dict[str, Any]]:
+        return [
+            box.visibility_assessment
+            for box in self.decision_result.final_boxes
+            if box.visibility_assessment is not None
+        ]
 
     @property
     def is_defect(self) -> bool:
@@ -482,6 +497,7 @@ class InspectionResult:
             "latency_ms": round(self.latency_ms, 1),
             "stage1_count": len(self.stage1_result.boxes),
             "stage2_count": len(self.stage2_result.boxes),
+            "visibility_assessments": self.visibility_assessments,
             "timing_breakdown": self.timing_breakdown.to_dict(),
             "result_image_path": self.result_image_path,
             "backup_path": self.backup_path,

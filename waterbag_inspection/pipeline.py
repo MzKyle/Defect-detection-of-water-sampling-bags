@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import time
 from copy import deepcopy
 from datetime import datetime
@@ -11,6 +10,7 @@ from typing import Mapping
 import cv2
 import numpy as np
 
+from .artifacts import ArtifactWriter
 from .config import (
     CameraConfig,
     CorrelationConfig,
@@ -35,6 +35,11 @@ from .schemas import (
     now_iso,
 )
 from .storage import SQLiteDetectionRepository
+from .visibility_matrix import (
+    assess_best_visibility_evidence,
+    estimate_visibility_evidence,
+    load_visibility_matrix,
+)
 
 
 def _elapsed_ms(start: float) -> float:
@@ -60,6 +65,8 @@ class InspectionPipeline:
         plc_controller: BasePLCController,
         primary_detector: BaseDetector,
         patch_detector: BaseDetector,
+        multilight_config=None,
+        artifact_writer: ArtifactWriter | None = None,
     ):
         self.runtime = runtime
         self.patch_config = patch_config
@@ -69,6 +76,20 @@ class InspectionPipeline:
         self.plc_controller = plc_controller
         self.primary_detector = primary_detector
         self.patch_detector = patch_detector
+        self.artifact_writer = artifact_writer or ArtifactWriter(
+            enabled=getattr(runtime, "async_artifact_writes", False),
+            max_queue_size=getattr(runtime, "artifact_queue_size", 128),
+            drop_when_full=getattr(runtime, "artifact_drop_when_full", True),
+        )
+        self.multilight_config = multilight_config
+        self.visibility_matrix = None
+        if (
+            multilight_config is not None
+            and getattr(multilight_config, "visibility_assessment_enabled", False)
+        ):
+            self.visibility_matrix = load_visibility_matrix(
+                getattr(multilight_config, "visibility_matrix_path", None)
+            )
         self.decision_policy = DefaultDecisionPolicy()
         self.bag_correlator = BagCorrelator(correlation_config)
         self.repeat_tracker = (
@@ -87,6 +108,11 @@ class InspectionPipeline:
         Path(self.runtime.upload_dir).mkdir(parents=True, exist_ok=True)
         if self.patch_config.save_visualizations:
             Path(self.patch_config.visualization_dir).mkdir(parents=True, exist_ok=True)
+
+    def close(self) -> bool:
+        return self.artifact_writer.close(
+            timeout=getattr(self.runtime, "artifact_flush_timeout_seconds", 2.0)
+        )
 
     def _mark_state(
         self,
@@ -199,11 +225,43 @@ class InspectionPipeline:
         backup_root.mkdir(parents=True, exist_ok=True)
         for light_name, path in frame_packet.light_paths.items():
             source = Path(path)
-            shutil.copy2(source, backup_root / f"{light_name}{source.suffix}")
+            self.artifact_writer.copy_file(source, backup_root / f"{light_name}{source.suffix}")
         source_path = Path(frame_packet.source_path)
         if source_path.exists() and source_path.suffix.lower() == ".json":
-            shutil.copy2(source_path, backup_root / "manifest.json")
+            self.artifact_writer.copy_file(source_path, backup_root / "manifest.json")
         return str(backup_root.resolve()), _elapsed_ms(backup_started)
+
+    def _assess_visibility_shadow(
+        self,
+        frame_packet: FramePacket,
+        boxes: list,
+    ) -> float:
+        if self.visibility_matrix is None or not frame_packet.is_multilight or not boxes:
+            return 0.0
+        started = time.perf_counter()
+        mode = getattr(self.multilight_config, "visibility_assessment_mode", "shadow")
+        light_order = getattr(self.multilight_config, "light_order", self.visibility_matrix.light_order)
+        for box in boxes:
+            evidence = estimate_visibility_evidence(
+                frame_packet.light_paths,
+                box,
+                light_order,
+            )
+            assessment = assess_best_visibility_evidence(
+                self.visibility_matrix,
+                box.label,
+                evidence.light_scores,
+                consistency_score=evidence.consistency_score,
+                morphology_cues=evidence.morphology_cues,
+                model_confidence=box.confidence,
+            )
+            box.visibility_assessment = {
+                "mode": mode,
+                "applied_to_decision": False,
+                "assessment": assessment.to_dict(),
+                "evidence": evidence.to_dict(),
+            }
+        return _elapsed_ms(started)
 
     def _build_timeout_result(self, timeout_context: TimedOutBagContext) -> InspectionResult:
         started = time.perf_counter()
@@ -232,7 +290,7 @@ class InspectionPipeline:
             backup_name = f"timeout_cam{timeout_packet.camera_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{source.suffix}"
             backup_started = time.perf_counter()
             backup_target = Path(self.runtime.backup_dir) / backup_name
-            shutil.copy2(source, backup_target)
+            self.artifact_writer.copy_file(source, backup_target)
             timings.backup_ms = _elapsed_ms(backup_started)
             backup_path = str(backup_target.resolve())
             self._mark_state(trace, PipelineState.BACKED_UP, backup_path)
@@ -257,7 +315,7 @@ class InspectionPipeline:
         emit_image = self._load_emit_image(source_path)
         result_name = f"timeout_cam{timeout_packet.camera_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_result.jpg"
         result_image_path = Path(self.runtime.result_dir) / result_name
-        cv2.imwrite(str(result_image_path), emit_image)
+        self.artifact_writer.write_image(result_image_path, emit_image)
 
         result = InspectionResult(
             frame_packet=timeout_packet,
@@ -309,9 +367,9 @@ class InspectionPipeline:
             else:
                 backup_started = time.perf_counter()
                 backup_path = Path(self.runtime.backup_dir) / backup_name
-                shutil.copy2(source, backup_path)
+                self.artifact_writer.copy_file(source, backup_path)
                 timings.backup_ms = _elapsed_ms(backup_started)
-                self._mark_state(trace, PipelineState.BACKED_UP, str(backup_path))
+                self._mark_state(trace, PipelineState.BACKED_UP, str(backup_path.resolve()))
 
             self._mark_state(trace, PipelineState.STAGE1_RUNNING)
             stage1_started = time.perf_counter()
@@ -359,6 +417,18 @@ class InspectionPipeline:
                     emit_image = stage2_image
                 self._mark_state(trace, PipelineState.STAGE2_DONE, f"boxes={len(stage2_boxes)}")
 
+            visibility_boxes = stage2_result.boxes or stage1_result.boxes
+            timings.visibility_assessment_ms = self._assess_visibility_shadow(
+                frame_packet,
+                visibility_boxes,
+            )
+            if timings.visibility_assessment_ms > 0:
+                self._mark_state(
+                    trace,
+                    PipelineState.VISIBILITY_ASSESSED,
+                    f"boxes={len(visibility_boxes)};mode=shadow",
+                )
+
             decision_started = time.perf_counter()
             boxes_for_repeat = stage2_result.boxes or stage1_result.boxes
             repeated = (
@@ -393,7 +463,7 @@ class InspectionPipeline:
 
             backup_stem = Path(backup_path).stem
             result_image_path = Path(self.runtime.result_dir) / f"{backup_stem}_result.jpg"
-            cv2.imwrite(str(result_image_path), emit_image)
+            self.artifact_writer.write_image(result_image_path, emit_image)
 
             result = InspectionResult(
                 frame_packet=frame_packet,

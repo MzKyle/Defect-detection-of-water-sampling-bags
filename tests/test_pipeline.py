@@ -52,6 +52,42 @@ def test_pipeline_runs_stage2_and_persists_record(tmp_path):
     assert len(repository.recent(limit=5)) == 1
 
 
+def test_pipeline_can_write_artifacts_asynchronously(tmp_path):
+    settings = load_settings("config/demo.yaml")
+    settings.runtime.backup_dir = str(tmp_path / "backups")
+    settings.runtime.result_dir = str(tmp_path / "results")
+    settings.runtime.upload_dir = str(tmp_path / "uploads")
+    settings.runtime.async_artifact_writes = True
+    settings.runtime.artifact_queue_size = 8
+    settings.storage.sqlite_path = str(tmp_path / "inspection.db")
+    settings.repeat_detection.history_path = str(tmp_path / "repeat.json")
+    settings.correlation.expected_camera_ids = [1]
+
+    image_path = tmp_path / "bag_1001_cam1_defect_primary.jpg"
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    cv2.circle(image, (320, 180), 18, (0, 0, 0), -1)
+    cv2.imwrite(str(image_path), image)
+
+    repository = SQLiteDetectionRepository(settings.storage.sqlite_path)
+    pipeline = InspectionPipeline(
+        runtime=settings.runtime,
+        patch_config=settings.patch_detection,
+        correlation_config=settings.correlation,
+        repeat_config=settings.repeat_detection,
+        repository=repository,
+        plc_controller=build_plc_controller(settings.plc),
+        primary_detector=build_detector(settings.primary_model),
+        patch_detector=build_detector(settings.patch_model),
+    )
+
+    result = pipeline.process_image(settings.cameras[0], str(image_path))
+
+    assert result.status_text == "异常"
+    assert pipeline.close() is True
+    assert Path(result.backup_path).exists()
+    assert Path(result.result_image_path).exists()
+
+
 def test_pipeline_processes_multilight_group_as_single_model_call(tmp_path):
     settings = load_settings("config/demo.yaml")
     settings.runtime.backup_dir = str(tmp_path / "backups")

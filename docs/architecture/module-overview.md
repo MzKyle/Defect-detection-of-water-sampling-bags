@@ -9,9 +9,12 @@
 | `waterbag_inspection/cli.py` | `main` | 命令行入口 |
 | `waterbag_inspection/config.py` | `load_settings` | YAML 配置加载与路径解析 |
 | `waterbag_inspection/schemas.py` | 多个 dataclass | 链路数据模型 |
-| `waterbag_inspection/service.py` | `InspectionRuntime` | 目录监听和 worker |
+| `waterbag_inspection/service.py` | `InspectionRuntime` | 目录监听、manifest 入队和 worker |
 | `waterbag_inspection/pipeline.py` | `InspectionPipeline` | 检测主流程 |
-| `waterbag_inspection/detectors.py` | `MockDetector`, `UltralyticsDetector` | 检测器后端 |
+| `waterbag_inspection/detectors.py` | `MockDetector`, `UltralyticsDetector`, `MultiLightTorchDetector` | 检测器后端 |
+| `waterbag_inspection/multilight.py` | `load_multilight_manifest` | 三光源 manifest 解析与路径规范化 |
+| `waterbag_inspection/visibility_matrix.py` | `VisibilityMatrix` | 多光源证据链 shadow 评估 |
+| `waterbag_inspection/artifacts.py` | `ArtifactWriter` | 备份图和结果图异步落盘 |
 | `waterbag_inspection/correlation.py` | `BagCorrelator` | 多相机袋体级关联 |
 | `waterbag_inspection/repeater.py` | `RepeatDefectTracker` | 重复缺陷识别 |
 | `waterbag_inspection/policy.py` | `DefaultDecisionPolicy` | 业务决策和控制命令 |
@@ -38,7 +41,8 @@
 | `config/cpp_backend/demo.ini` | - | C++ 实时后端示例配置 |
 | `cpp_backend/detect_orchestrator/src/detector.cpp` | `MockDetector`, `OnnxRuntimeDetector`, `make_detector` | 可选 ONNX Runtime CUDA 检测器 |
 | `cpp_backend/detect_orchestrator/src/pipeline.cpp` | `InspectionPipeline` | C++ 实时推理编排 |
-| `cpp_backend/detect_orchestrator/src/runtime.cpp` | `RealtimeRuntime` | 目录轮询、worker、顺序分拣 |
+| `cpp_backend/detect_orchestrator/src/runtime.cpp` | `RealtimeRuntime` | 目录轮询、defect worker、独立 sorter 线程 |
+| `cpp_backend/detect_orchestrator/src/storage.cpp` | `JsonlResultRepository` | C++ JSONL 同步/异步留档 |
 | `cpp_backend/camera_driver/`, `cpp_backend/PLC_driver/` | burst 采图 / PLC 控制 | 现场链路设备适配 |
 
 ## Legacy 资产
@@ -61,6 +65,8 @@ graph LR
     CLIM --> SERVE
     CLIM --> SEED["seed-demo"]
     CLIM --> INSPECT["inspect"]
+    CLIM --> ML["inspect-multilight"]
+    CLIM --> VIS["assess-visibility"]
     CLIM --> REPLAY["replay"]
     CLIM --> FAULT["inject-faults"]
     SERVE --> RUNTIME["InspectionRuntime"]

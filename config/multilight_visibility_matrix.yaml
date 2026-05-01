@@ -1,0 +1,97 @@
+schema_version: 1
+light_order: [backlight, darkfield, polarized]
+
+rating_values:
+  none: 0.0
+  weak: 0.25
+  medium: 0.6
+  strong: 1.0
+
+decision_thresholds:
+  ng: 0.68
+  review: 0.42
+
+defects:
+  rupture_edge:
+    display_name: 袋体破损 / 边缘异常
+    aliases: [rupture, tear, broken, damage, edge_defect, bag_edge]
+    visibility:
+      backlight: strong
+      darkfield: medium
+      polarized: weak
+    primary_lights: [backlight]
+    corroborating_lights: [darkfield]
+    required_cues: [edge_discontinuity, contour_break, leakage_contrast]
+    suppress_cues: [fixture_edge, crop_boundary]
+    false_positive_risks: [edge_shadow, fixture_occlusion, roi_boundary]
+    decision_logic: 背光为主证据；暗场用于确认边缘起伏或撕裂形态；偏振单独强响应时进入复核。
+
+  hair_fiber:
+    display_name: 头发丝 / 细长异物
+    aliases: [hair, fiber, filament, thread, slender_foreign_body]
+    visibility:
+      backlight: medium
+      darkfield: strong
+      polarized: medium
+    primary_lights: [darkfield]
+    corroborating_lights: [polarized, backlight]
+    required_cues: [slender, high_aspect_ratio, thin_continuous]
+    suppress_cues: [wide_crease, natural_texture_direction]
+    false_positive_risks: [normal_crease, printing_edge, water_mark]
+    decision_logic: 暗场细长结构为主证据；偏振或背光弱响应可增强可信度；宽而连续的自然折痕应降权。
+
+  dark_spot_stain:
+    display_name: 黑点 / 污点 / 淡色污染
+    aliases: [spot, black_dot, stain, smudge, dirty, contamination]
+    visibility:
+      backlight: medium
+      darkfield: medium
+      polarized: strong
+    primary_lights: [polarized]
+    corroborating_lights: [backlight, darkfield]
+    required_cues: [localized_blob, stable_position, clear_boundary]
+    suppress_cues: [specular_highlight, dust_on_lens]
+    false_positive_risks: [lighting_hotspot, sensor_dust, water_drop_reflection]
+    decision_logic: 偏振下稳定明显且多光源位置一致时提高 NG；只在单光源孤立出现时复核。
+
+  white_crease:
+    display_name: 白色折痕 / 反光折线
+    aliases: [white_crease, crease, fold, white_line, reflection_line]
+    visibility:
+      backlight: weak
+      darkfield: strong
+      polarized: strong
+    primary_lights: [darkfield, polarized]
+    corroborating_lights: [backlight]
+    required_cues: [linear_structure]
+    suppress_cues: [wide_continuous, natural_texture_direction, low_edge_sharpness]
+    false_positive_risks: [normal_fold, packaging_texture, specular_reflection]
+    decision_logic: 暗场和偏振都明显但形态宽、连续、沿自然纹理方向时降低 NG；短、尖锐、位置异常时进入复核或判 NG。
+
+  bubble_dent:
+    display_name: 气泡 / 压痕 / 局部凸凹
+    aliases: [bubble, dent, indentation, pressure_mark, emboss]
+    visibility:
+      backlight: medium
+      darkfield: strong
+      polarized: medium
+    primary_lights: [darkfield]
+    corroborating_lights: [backlight, polarized]
+    required_cues: [local_relief, consistent_position]
+    suppress_cues: [large_smooth_fold, bag_corner_tension]
+    false_positive_risks: [normal_pressure_trace, fixture_pressure, broad_fold]
+    decision_logic: 暗场凸凹为主证据；背光和偏振位置一致时提高可信度；大面积平滑折痕降权。
+
+  pinhole_transmission:
+    display_name: 针孔 / 透光小缺陷
+    aliases: [pinhole, tiny_hole, transmission_dot, micro_hole]
+    visibility:
+      backlight: strong
+      darkfield: medium
+      polarized: weak
+    primary_lights: [backlight]
+    corroborating_lights: [darkfield]
+    required_cues: [tiny_bright_point, high_local_contrast]
+    suppress_cues: [isolated_sensor_noise, dust_on_backlight]
+    false_positive_risks: [backlight_noise, hot_pixel, dust]
+    decision_logic: 背光小亮点为主证据；暗场同位置有边缘响应时提高 NG；孤立单像素噪声降权。

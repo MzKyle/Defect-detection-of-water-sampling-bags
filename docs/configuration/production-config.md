@@ -133,6 +133,9 @@ runtime:
   backup_dir: artifacts/backups
   result_dir: artifacts/results
   upload_dir: artifacts/uploads
+  async_artifact_writes: true
+  artifact_queue_size: 256
+  artifact_drop_when_full: true
 ```
 
 生产环境建议：
@@ -141,6 +144,8 @@ runtime:
 - 定期归档或清理结果图
 - 为 SQLite 和日志做备份
 - 在长时间运行前评估磁盘增长速度
+- 开启 `async_artifact_writes`，让备份图和结果图后台落盘，避免磁盘 IO 抖动拖慢推理和 PLC 下发
+- 如果追溯图一张都不能丢，将 `artifact_drop_when_full` 改为 `false`，并同步评估队列满时的尾延迟
 
 ## 上线前检查清单
 

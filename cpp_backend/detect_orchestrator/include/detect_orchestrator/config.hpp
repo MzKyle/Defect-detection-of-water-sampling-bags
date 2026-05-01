@@ -28,6 +28,9 @@ struct DetectorConfig {
 
 struct StorageConfig {
     std::filesystem::path result_jsonl = "artifacts/cpp_backend/results.jsonl";
+    bool async_result_writes = false;
+    std::size_t result_queue_capacity = 256;
+    bool drop_results_when_full = true;
 };
 
 struct ServiceConfig {

@@ -175,6 +175,14 @@ class SQLiteDetectionRepository:
 
         items = []
         for row in rows:
+            stage1_boxes = json.loads(row["stage1_boxes"])
+            stage2_boxes = json.loads(row["stage2_boxes"])
+            final_boxes = json.loads(row["final_boxes"])
+            visibility_assessments = [
+                box.get("visibility_assessment")
+                for box in final_boxes
+                if isinstance(box, dict) and box.get("visibility_assessment")
+            ]
             timing_breakdown = json.loads(row["timing_breakdown"] or "{}")
             state_trace = json.loads(row["state_trace"] or "[]")
             bag_summary = json.loads(row["bag_summary"] or "{}") if "bag_summary" in row.keys() else {}
@@ -212,9 +220,14 @@ class SQLiteDetectionRepository:
                     "queue_delay_ms": timing_breakdown.get("queue_delay_ms", 0.0),
                     "correlation_ms": timing_breakdown.get("correlation_ms", 0.0),
                     "control_ms": timing_breakdown.get("control_ms", 0.0),
-                    "stage1_count": len(json.loads(row["stage1_boxes"])),
-                    "stage2_count": len(json.loads(row["stage2_boxes"])),
-                    "final_count": len(json.loads(row["final_boxes"])),
+                    "stage1_count": len(stage1_boxes),
+                    "stage2_count": len(stage2_boxes),
+                    "final_count": len(final_boxes),
+                    "visibility_assessment_count": len(visibility_assessments),
+                    "visibility_recommendations": [
+                        item.get("assessment", {}).get("recommended_action")
+                        for item in visibility_assessments
+                    ],
                     "state_count": len(state_trace),
                     "result_image_path": row["result_image_path"],
                 }

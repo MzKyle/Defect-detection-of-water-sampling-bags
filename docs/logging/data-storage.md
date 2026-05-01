@@ -24,6 +24,8 @@ artifacts/
 | `patch_vis/` | Stage 2 patch 命中可视化 |
 | `uploads/` | Web 上传原始文件 |
 
+生产配置开启异步 artifact 写入时，`backup_path` 和 `result_image_path` 会先进入结果记录，实际文件由后台队列写入。落盘用于追溯和训练，不阻塞推理和 PLC 主链路。
+
 ## SQLite 表
 
 表名：
@@ -60,6 +62,8 @@ detection_results
 | `state_trace` | TEXT | JSON |
 | `timing_breakdown` | TEXT | JSON |
 | `latency_ms` | REAL | 总延迟 |
+
+多光源可见性矩阵的 shadow 评估会随检测框一起写入 `stage1_boxes`、`stage2_boxes` 或 `final_boxes` 中的 `visibility_assessment` 字段，并在接口摘要中提供 `visibility_assessment_count` 和 `visibility_recommendations`。
 
 ## 查询示例
 

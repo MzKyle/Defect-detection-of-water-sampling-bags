@@ -2,7 +2,9 @@
 
 ## 概述
 
-`InspectionPipeline` 是系统最核心的业务链路。它接收 `FramePacket`，完成原图备份、二阶段检测、重复缺陷判断、袋体级关联、控制命令执行、结果图保存和 SQLite 留档。
+`InspectionPipeline` 是系统最核心的业务链路。它接收 `FramePacket`，完成原图备份调度、二阶段检测、重复缺陷判断、袋体级关联、控制命令执行、结果图保存调度和 SQLite 留档。
+
+备份图和结果图由 `ArtifactWriter` 写入磁盘。演示配置默认同步写入，生产配置可开启异步写入，让主链路先完成推理、判定和 PLC 通信，落盘只作为追溯与训练数据留存。
 
 **路径**: `waterbag_inspection/pipeline.py`
 
@@ -17,27 +19,34 @@
 | `SQLiteDetectionRepository` | `storage.py` | 结果持久化 |
 | `BasePLCController` | `plc.py` | 控制命令执行 |
 | `BaseDetector` | `detectors.py` | Stage 1 / Stage 2 检测器 |
+| `ArtifactWriter` | `artifacts.py` | 备份图和结果图写入，支持异步队列 |
 
 ## 主流程
 
 ```mermaid
 flowchart TD
     A["FramePacket"] --> B["文件就绪 / 记录 queue_delay"]
-    B --> C["备份原图到 artifacts/backups"]
+    B --> ML{多光源?}
+    ML -- 是 --> MLR["记录 light_paths / manifest ready"]
+    ML -- 否 --> C["调度原图备份"]
+    MLR --> C
     C --> D["Stage 1 整图检测"]
     D --> E{Stage 1 有缺陷?}
-    E -- 是 --> H["重复缺陷判断"]
+    E -- 是 --> V{多光源 shadow 评估?}
     E -- 否 --> F{启用 Stage 2?}
-    F -- 否 --> H
+    F -- 否 --> V
     F -- 是 --> G["Stage 2 网格复检"]
-    G --> H
-    H --> I["局部 DecisionResult"]
+    G --> V
+    V -- 是 --> H["可见性矩阵记录证据"]
+    V -- 否 --> RPT["重复缺陷判断"]
+    H --> RPT
+    RPT --> I["局部 DecisionResult"]
     I --> J["BagCorrelator 袋体级聚合"]
     J --> K["最终 DecisionResult"]
     K --> L{finalized 且需要新命令?}
     L -- 是 --> M["PLC execute"]
     L -- 否 --> N["跳过控制"]
-    M --> O["保存结果图"]
+    M --> O["调度结果图保存"]
     N --> O
     O --> P["SQLite 留档"]
     P --> Q["InspectionResult"]
@@ -59,14 +68,31 @@ flowchart TD
 | 字段 | 说明 |
 | --- | --- |
 | `queue_delay_ms` | 从入队到开始处理的等待时间 |
-| `backup_ms` | 原图备份耗时 |
+| `backup_ms` | 原图备份耗时；异步模式下为入队调度耗时 |
 | `stage1_inference_ms` | Stage 1 推理耗时 |
 | `stage2_inference_ms` | Stage 2 推理耗时 |
+| `visibility_assessment_ms` | 多光源可见性矩阵 shadow 评估耗时 |
 | `decision_ms` | 重复缺陷与局部决策耗时 |
 | `correlation_ms` | 袋体关联耗时 |
 | `control_ms` | PLC 控制耗时 |
 | `persist_ms` | SQLite 持久化耗时 |
 | `total_ms` | pipeline 总耗时 |
+
+## 异步落盘
+
+生产配置建议开启：
+
+```yaml
+runtime:
+  async_artifact_writes: true
+  artifact_queue_size: 256
+  artifact_drop_when_full: true
+  artifact_flush_timeout_seconds: 2.0
+```
+
+开启后，主 worker 不再等待 `shutil.copy2` 或 `cv2.imwrite` 完成。`backup_path` 和 `result_image_path` 仍会写入结果记录，但实际文件由后台 `artifact-writer` 线程完成。
+
+当磁盘或网络盘抖动导致队列积压时，`artifact_drop_when_full: true` 会优先保障分拣尾延迟，允许丢弃追溯图；如果现场必须保证每张追溯图都保存，可以改为 `false`，但队列满时主链路会等待。
 
 ## 超时处理
 
@@ -78,7 +104,7 @@ flowchart TD
 2. 沿用已有 Stage 1 / Stage 2 结果
 3. 使用超时后的 `BagSummary`
 4. 下发 `timeout_action`
-5. 保存结果图和 SQLite 记录
+5. 调度结果图保存并写入 SQLite 记录
 
 ## 输出结果
 

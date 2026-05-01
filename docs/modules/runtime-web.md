@@ -14,6 +14,20 @@
 - 调用 `InspectionPipeline.process_packet()`
 - 发布结果给已注册 listener
 - worker 空闲时定期调用 `pipeline.flush_timeouts()`
+- 停止时关闭 `pipeline`，等待异步落盘队列在配置时间内排空
+
+当前 runtime 仍兼容相机软件落盘到 watch 目录的模式，因此会等待输入文件稳定后再推理。为了进一步做到“相机图像 -> 内存 ring buffer -> 推理”，需要相机 SDK 直接把三光源图像组交给 `FramePacket` 或后续的采集队列；本次优化先把备份图和结果图从主推理链路里移到异步落盘。
+
+## 建议流水线职责
+
+| 环节 | 当前落点 | 说明 |
+| --- | --- | --- |
+| 采集 | `watchdog` / 后续相机 SDK | 当前监听文件，SDK 接入后可直接写入内存队列 |
+| 预处理 | detector / multilight backend | 单图或三光源组包后进入模型输入 |
+| 推理 | `primary_detector`, `patch_detector` | 多光源模式一次模型调用处理三张图 |
+| 后处理 | `InspectionPipeline` | NMS 后结果、可见性矩阵影子评估、袋级判定 |
+| PLC | `plc_controller.execute()` | 只在最终决策后下发控制 |
+| 日志落盘 | `ArtifactWriter` | 备份图和结果图异步保存，不阻塞分拣主链路 |
 
 ## 文件稳定性检查
 
@@ -66,7 +80,7 @@ inspection_update
 
 ## HTTP API
 
-Web API 详见 [接口参考](interfaces/web-api.md)。
+Web API 详见 [接口参考](../interfaces/web-api.md)。
 
 ## 运行时控制
 
