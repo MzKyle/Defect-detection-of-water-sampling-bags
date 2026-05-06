@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -16,6 +17,7 @@
 #include "detect_orchestrator/pipeline.hpp"
 #include "detect_orchestrator/runtime.hpp"
 #include "detect_orchestrator/storage.hpp"
+#include "mock_camera_driver/mock_burst_capture.hpp"
 
 namespace {
 
@@ -60,6 +62,17 @@ std::vector<int> camera_ids_from_config(const waterbag::RuntimeConfig& config) {
     return ids;
 }
 
+std::shared_ptr<waterbag::ICameraBurstCapture> make_burst_capture(const waterbag::AppConfig& config) {
+    const auto& backend = config.camera_driver.backend;
+    if (backend == "mock") {
+        return std::make_shared<waterbag::MockCameraBurstCapture>();
+    }
+    if (backend == "hikvision_mvs" || backend == "hik" || backend == "mvs") {
+        return waterbag::make_hikvision_mvs_burst_capture(config.camera_driver, config.runtime);
+    }
+    throw std::runtime_error("unsupported camera_driver.backend: " + backend);
+}
+
 void save_and_log(waterbag::JsonlResultRepository& repository, const waterbag::InspectionResult& result) {
     repository.save(result);
     waterbag::Logger::instance().info(
@@ -74,8 +87,7 @@ void save_and_log(waterbag::JsonlResultRepository& repository, const waterbag::I
 std::shared_ptr<waterbag::InspectionPipeline> build_pipeline(const waterbag::AppConfig& config) {
     auto primary_detector = waterbag::make_detector(config.detectors.primary, "mock-primary");
     auto patch_detector = waterbag::make_detector(config.detectors.patch, "mock-patch");
-    auto presence_detector = waterbag::make_detector(config.detectors.presence, "mock-presence");
-    auto burst_capture = std::make_shared<waterbag::MockCameraBurstCapture>();
+    auto burst_capture = make_burst_capture(config);
     auto plc = std::make_shared<waterbag::MockSemanticPlcController>(config.plc);
     burst_capture->start();
 
@@ -84,7 +96,6 @@ std::shared_ptr<waterbag::InspectionPipeline> build_pipeline(const waterbag::App
         config.correlation,
         burst_capture,
         plc,
-        presence_detector,
         primary_detector,
         patch_detector);
 }
@@ -192,6 +203,7 @@ int main(int argc, char** argv) {
         waterbag::Logger::instance().configure(config.logger);
         waterbag::Logger::instance().info("loaded config: " + config_path.string());
         waterbag::Logger::instance().info("defect_worker_count=" + std::to_string(config.runtime.defect_worker_count));
+        waterbag::Logger::instance().info("camera_driver.backend=" + config.camera_driver.backend);
 
         waterbag::JsonlResultRepository repository(
             config.storage.result_jsonl,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 
 #include "detect_orchestrator/hardware_clock.hpp"
@@ -111,19 +112,11 @@ public:
     virtual std::optional<CaptureGroup> poll_completed_group(const std::string& capture_session_id) = 0;
 };
 
-class MockCameraBurstCapture final : public ICameraBurstCapture {
-public:
-    void start() override;
-    void arm_burst(const CaptureSession& session, const BurstPlan& plan) override;
-    std::optional<CaptureGroup> poll_completed_group(const std::string& capture_session_id) override;
-
-private:
-    std::map<std::string, CaptureGroup> completed_groups_;
-    std::uint64_t next_frame_id_ = 1;
-};
-
 BurstPlan make_production_burst_plan();
 CaptureSession make_capture_session(const FramePacket& packet);
 std::vector<std::string> capture_group_trace(const CaptureGroup& group);
+std::shared_ptr<ICameraBurstCapture> make_hikvision_mvs_burst_capture(
+    CameraDriverConfig driver_config,
+    RuntimeConfig runtime_config);
 
 }  // namespace waterbag

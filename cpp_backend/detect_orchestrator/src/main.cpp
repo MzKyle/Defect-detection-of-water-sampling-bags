@@ -8,6 +8,7 @@
 
 #include "detect_orchestrator/detector.hpp"
 #include "detect_orchestrator/pipeline.hpp"
+#include "mock_camera_driver/mock_burst_capture.hpp"
 
 namespace {
 
@@ -85,7 +86,6 @@ int main(int argc, char** argv) {
     waterbag::DetectorConfig detector_config;
     auto primary_detector = waterbag::make_detector(detector_config.primary, "mock-primary");
     auto patch_detector = waterbag::make_detector(detector_config.patch, "mock-patch");
-    auto presence_detector = waterbag::make_detector(detector_config.presence, "mock-presence");
     auto burst_capture = std::make_shared<waterbag::MockCameraBurstCapture>();
     auto plc = std::make_shared<waterbag::MockSemanticPlcController>(plc_config);
     burst_capture->start();
@@ -95,7 +95,6 @@ int main(int argc, char** argv) {
         correlation_config,
         burst_capture,
         plc,
-        presence_detector,
         primary_detector,
         patch_detector);
 

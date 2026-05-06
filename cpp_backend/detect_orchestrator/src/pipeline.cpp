@@ -194,7 +194,6 @@ InspectionPipeline::InspectionPipeline(
     CorrelationConfig correlation_config,
     std::shared_ptr<ICameraBurstCapture> burst_capture,
     std::shared_ptr<IPlcController> plc_controller,
-    std::shared_ptr<IDetector> presence_detector,
     std::shared_ptr<IDetector> primary_detector,
     std::shared_ptr<IDetector> patch_detector)
     : detection_config_(detection_config),
@@ -202,7 +201,6 @@ InspectionPipeline::InspectionPipeline(
       burst_plan_(make_production_burst_plan()),
       burst_capture_(std::move(burst_capture)),
       plc_controller_(std::move(plc_controller)),
-      presence_detector_(std::move(presence_detector)),
       primary_detector_(std::move(primary_detector)),
       patch_detector_(std::move(patch_detector)) {}
 
@@ -243,24 +241,51 @@ InspectionResult InspectionPipeline::process_station_packet(FramePacket packet) 
     result.timing.queue_delay_ms = std::chrono::duration<double, std::milli>(now - packet.enqueued_at).count();
 
     result.presence_result.stage_name = "presence";
-    result.presence_result.detector_backend = presence_detector_->backend_name();
+    result.presence_result.detector_backend = "plc_laser";
     result.presence_result.triggered = detection_config_.presence_enabled;
     if (detection_config_.presence_enabled) {
-        result.state_trace.push_back("presence_running");
-        result.presence_result = presence_detector_->detect(packet, DetectionStage::Presence);
-        filter_by_confidence(result.presence_result.boxes, detection_config_.presence_conf_threshold);
-        result.timing.presence_inference_ms = result.presence_result.inference_ms;
-        result.state_trace.push_back("presence_done:boxes=" + std::to_string(result.presence_result.boxes.size()));
+        result.state_trace.push_back("plc_laser_presence_waiting");
+        const auto presence = plc_controller_->read_laser_presence(packet);
+        result.timing.presence_inference_ms = presence.latency_ms;
+        packet.metadata["presence.source"] = "plc_laser";
+        packet.metadata["presence.station_id"] = presence.station_id;
+        packet.metadata["presence.message_id"] = presence.message_id;
+        packet.metadata["presence.detail"] = presence.detail;
+        packet.metadata["presence.message_valid"] = presence.message_valid ? "true" : "false";
+        packet.metadata["presence.timed_out"] = presence.timed_out ? "true" : "false";
+        packet.metadata["presence.bag_present"] = presence.bag_present ? "true" : "false";
+        if (!presence.bag_id.empty()) {
+            packet.bag_id = presence.bag_id;
+            packet.metadata["bag.id"] = presence.bag_id;
+            packet.metadata["bag.id_source"] = "plc_laser_presence";
+        }
+        result.frame_packet = packet;
+        result.presence_result.inference_ms = presence.latency_ms;
+        if (presence.message_valid && !presence.timed_out && presence.bag_present) {
+            result.presence_result.boxes.push_back(DetectionBox{0, 0, 0, 0, "plc_laser_presence", 1.0});
+        }
+        result.state_trace.push_back(
+            std::string("plc_laser_presence:") +
+            (presence.bag_present ? "bag_present" : "no_bag") +
+            ":valid=" + (presence.message_valid ? "true" : "false") +
+            ":timeout=" + (presence.timed_out ? "true" : "false") +
+            ":" + presence.detail);
     }
 
     if (detection_config_.presence_enabled && !result.presence_result.is_defect()) {
+        const auto timed_out = metadata_value(packet, "presence.timed_out") == "true";
+        const auto message_valid = metadata_value(packet, "presence.message_valid", "true") == "true";
         result.decision_result.finalized = false;
+        result.decision_result.timed_out = timed_out;
         result.decision_result.control_action = "no_bag";
-        result.decision_result.reason = "bag_not_found";
+        result.decision_result.reason = timed_out
+            ? "plc_laser_presence_timeout"
+            : (message_valid ? "plc_laser_no_bag" : "plc_laser_presence_invalid");
         result.bag_summary.bag_id = packet.bag_id;
+        result.bag_summary.timed_out = timed_out;
         result.bag_summary.aggregate_action = "no_bag";
-        result.bag_summary.aggregate_reason = "bag_not_found";
-        result.state_trace.push_back("skip_defect_detection:no_bag");
+        result.bag_summary.aggregate_reason = result.decision_result.reason;
+        result.state_trace.push_back("skip_defect_detection:" + result.decision_result.reason);
         result.timing.total_ms = elapsed_ms(started);
         return result;
     }

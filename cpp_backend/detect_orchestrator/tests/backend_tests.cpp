@@ -9,6 +9,7 @@
 #include "detect_orchestrator/config.hpp"
 #include "detect_orchestrator/pipeline.hpp"
 #include "detect_orchestrator/storage.hpp"
+#include "mock_camera_driver/mock_burst_capture.hpp"
 
 namespace {
 
@@ -28,7 +29,6 @@ std::shared_ptr<waterbag::InspectionPipeline> make_pipeline(waterbag::PlcConfig 
     waterbag::CorrelationConfig correlation;
     correlation.pending_timeout = waterbag::Milliseconds{10};
 
-    auto presence = std::make_shared<waterbag::MockDetector>("mock-presence");
     auto primary = std::make_shared<waterbag::MockDetector>("mock-primary");
     auto patch = std::make_shared<waterbag::MockDetector>("mock-patch");
     auto burst_capture = std::make_shared<waterbag::MockCameraBurstCapture>();
@@ -40,7 +40,6 @@ std::shared_ptr<waterbag::InspectionPipeline> make_pipeline(waterbag::PlcConfig 
         correlation,
         burst_capture,
         plc,
-        presence,
         primary,
         patch);
 }
@@ -91,8 +90,46 @@ void test_presence_gate_skips_empty_frame() {
     auto result = pipeline->process_station_packet(packet);
 
     assert(result.decision_result.control_action == "no_bag");
+    assert(result.decision_result.reason == "plc_laser_no_bag");
     assert(result.stage1_result.boxes.empty());
     assert(result.execution_feedbacks.empty());
+}
+
+void test_plc_laser_presence_message_drives_gate() {
+    auto pipeline = make_pipeline();
+    waterbag::CameraConfig camera{1, "A-camera", "camera1"};
+    const auto path = make_file(std::filesystem::temp_directory_path() / "waterbag_cpp_tests" / "empty_name_but_plc_present.jpg");
+
+    auto packet = waterbag::make_frame_packet(camera, path);
+    packet.metadata["plc.laser_present"] = "true";
+    packet.metadata["plc.presence_message_id"] = "plc-msg-42";
+    packet.metadata["plc.bag_id"] = "bag_from_plc_42";
+    auto result = pipeline->process_station_packet(packet);
+
+    assert(result.presence_result.detector_backend == "plc_laser");
+    assert(result.presence_result.is_defect());
+    assert(result.decision_result.control_action == "defect_queued");
+    assert(result.frame_packet.bag_id == "bag_from_plc_42");
+    assert(result.frame_packet.metadata.at("presence.message_id") == "plc-msg-42");
+    assert(trace_contains(result, "plc_laser_presence:bag_present"));
+}
+
+void test_plc_laser_presence_timeout_is_reported() {
+    waterbag::PlcConfig plc_config;
+    plc_config.presence_message_timeout = waterbag::Milliseconds{1};
+    plc_config.mock_presence_latency = waterbag::Milliseconds{2};
+    auto pipeline = make_pipeline(plc_config);
+    waterbag::CameraConfig camera{1, "A-camera", "camera1"};
+    const auto path = make_file(std::filesystem::temp_directory_path() / "waterbag_cpp_tests" / "bag_099_cam1_good.jpg");
+
+    auto packet = waterbag::make_frame_packet(camera, path);
+    auto result = pipeline->process_station_packet(packet);
+
+    assert(result.decision_result.control_action == "no_bag");
+    assert(result.decision_result.reason == "plc_laser_presence_timeout");
+    assert(result.decision_result.timed_out);
+    assert(result.bag_summary.timed_out);
+    assert(result.frame_packet.metadata.at("presence.timed_out") == "true");
 }
 
 void test_presence_triggers_lever_actions_before_defect_decision() {
@@ -161,6 +198,8 @@ void test_jsonl_storage_contains_presence_fields() {
     std::string line;
     std::getline(input, line);
     assert(line.find("\"bag_present\":true") != std::string::npos);
+    assert(line.find("\"presence_source\":\"plc_laser\"") != std::string::npos);
+    assert(line.find("\"presence_message_valid\":true") != std::string::npos);
     assert(line.find("\"advance_control_ms\"") != std::string::npos);
     assert(line.find("\"control_commands\"") != std::string::npos);
     assert(line.find("push_bag_after_capture") != std::string::npos);
@@ -310,6 +349,7 @@ void test_config_loads_presence_settings() {
     assert(config.detection.presence_enabled);
     assert(config.detection.advance_on_presence);
     assert(config.detection.advance_trigger_camera_id == 0);
+    assert(config.plc.presence_message_timeout == waterbag::Milliseconds{200});
     assert(config.runtime.defect_worker_count == 4);
     assert(config.runtime.expected_burst_images_per_camera == 3);
     assert(config.runtime.bag_capture_timeout == waterbag::Milliseconds{1500});
@@ -317,6 +357,9 @@ void test_config_loads_presence_settings() {
     assert(config.storage.async_result_writes);
     assert(config.storage.result_queue_capacity == 512);
     assert(config.storage.drop_results_when_full);
+    assert(config.camera_driver.backend == "mock");
+    assert(config.camera_driver.default_trigger_source == "Line0");
+    assert(config.camera_driver.enable_chunk_timestamp);
     assert(config.runtime.cameras.size() == 2);
 }
 
@@ -324,6 +367,8 @@ void test_config_loads_presence_settings() {
 
 int main() {
     test_presence_gate_skips_empty_frame();
+    test_plc_laser_presence_message_drives_gate();
+    test_plc_laser_presence_timeout_is_reported();
     test_presence_triggers_lever_actions_before_defect_decision();
     test_jsonl_storage_contains_presence_fields();
     test_jsonl_storage_can_write_asynchronously();

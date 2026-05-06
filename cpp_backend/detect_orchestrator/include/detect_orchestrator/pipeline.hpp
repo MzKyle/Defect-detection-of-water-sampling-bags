@@ -17,7 +17,6 @@ public:
         CorrelationConfig correlation_config,
         std::shared_ptr<ICameraBurstCapture> burst_capture,
         std::shared_ptr<IPlcController> plc_controller,
-        std::shared_ptr<IDetector> presence_detector,
         std::shared_ptr<IDetector> primary_detector,
         std::shared_ptr<IDetector> patch_detector);
 
@@ -48,7 +47,6 @@ private:
     BurstPlan burst_plan_;
     std::shared_ptr<ICameraBurstCapture> burst_capture_;
     std::shared_ptr<IPlcController> plc_controller_;
-    std::shared_ptr<IDetector> presence_detector_;
     std::shared_ptr<IDetector> primary_detector_;
     std::shared_ptr<IDetector> patch_detector_;
     std::mutex correlation_mutex_;

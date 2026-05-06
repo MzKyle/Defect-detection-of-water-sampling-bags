@@ -153,32 +153,67 @@ AppConfig load_app_config(const std::filesystem::path& path) {
     config.runtime.bag_capture_timeout = ini.get_ms("runtime", "bag_capture_timeout_ms", config.runtime.bag_capture_timeout);
     config.runtime.sort_result_timeout = ini.get_ms("runtime", "sort_result_timeout_ms", config.runtime.sort_result_timeout);
 
+    config.camera_driver.backend = lower_copy(ini.get("camera_driver", "backend", config.camera_driver.backend));
+    config.camera_driver.output_dir = ini.get("camera_driver", "output_dir", config.camera_driver.output_dir.string());
+    config.camera_driver.frame_timeout = ini.get_ms("camera_driver", "frame_timeout_ms", config.camera_driver.frame_timeout);
+    config.camera_driver.enable_ptp = ini.get_bool("camera_driver", "enable_ptp", config.camera_driver.enable_ptp);
+    config.camera_driver.enable_chunk_timestamp = ini.get_bool(
+        "camera_driver",
+        "enable_chunk_timestamp",
+        config.camera_driver.enable_chunk_timestamp);
+    config.camera_driver.host_correlate_camera_time = ini.get_bool(
+        "camera_driver",
+        "host_correlate_camera_time",
+        config.camera_driver.host_correlate_camera_time);
+    config.camera_driver.apply_frame_settings = ini.get_bool(
+        "camera_driver",
+        "apply_frame_settings",
+        config.camera_driver.apply_frame_settings);
+    config.camera_driver.default_trigger_source = ini.get(
+        "camera_driver",
+        "default_trigger_source",
+        config.camera_driver.default_trigger_source);
+    config.camera_driver.default_trigger_activation = ini.get(
+        "camera_driver",
+        "default_trigger_activation",
+        config.camera_driver.default_trigger_activation);
+    config.camera_driver.save_format = lower_copy(ini.get("camera_driver", "save_format", config.camera_driver.save_format));
+    config.camera_driver.jpeg_quality = ini.get_int("camera_driver", "jpeg_quality", config.camera_driver.jpeg_quality);
+
     const auto camera_sections = ini.sections_with_prefix("camera.");
     for (const auto& section : camera_sections) {
         CameraConfig camera;
         camera.id = ini.get_int(section, "id", static_cast<int>(config.runtime.cameras.size() + 1));
         camera.name = ini.get(section, "name", "camera-" + std::to_string(camera.id));
         camera.watch_dir = ini.get(section, "watch_dir", "demo_data/camera" + std::to_string(camera.id));
+        camera.serial_number = ini.get(section, "serial_number");
+        camera.device_user_id = ini.get(section, "device_user_id");
+        camera.device_index = ini.get_int(section, "device_index", camera.device_index);
+        camera.trigger_source = ini.get(section, "trigger_source");
+        camera.trigger_activation = ini.get(section, "trigger_activation");
         config.runtime.cameras.push_back(camera);
     }
     if (config.runtime.cameras.empty()) {
-        config.runtime.cameras = {
-            CameraConfig{1, "A-camera", "demo_data/camera1"},
-            CameraConfig{2, "B-camera", "demo_data/camera2"},
-        };
+        CameraConfig camera1;
+        camera1.id = 1;
+        camera1.name = "A-camera";
+        camera1.watch_dir = "demo_data/camera1";
+        CameraConfig camera2;
+        camera2.id = 2;
+        camera2.name = "B-camera";
+        camera2.watch_dir = "demo_data/camera2";
+        config.runtime.cameras = {camera1, camera2};
     }
 
     config.detection.presence_enabled = ini.get_bool("detection", "presence_enabled", config.detection.presence_enabled);
     config.detection.advance_on_presence = ini.get_bool("detection", "advance_on_presence", config.detection.advance_on_presence);
     config.detection.advance_trigger_camera_id = ini.get_int("detection", "advance_trigger_camera_id", config.detection.advance_trigger_camera_id);
-    config.detection.presence_conf_threshold = ini.get_double("detection", "presence_conf_threshold", config.detection.presence_conf_threshold);
     config.detection.patch_enabled = ini.get_bool("detection", "patch_enabled", config.detection.patch_enabled);
     config.detection.patch_horizontal = ini.get_int("detection", "patch_horizontal", config.detection.patch_horizontal);
     config.detection.patch_vertical = ini.get_int("detection", "patch_vertical", config.detection.patch_vertical);
     config.detection.primary_conf_threshold = ini.get_double("detection", "primary_conf_threshold", config.detection.primary_conf_threshold);
     config.detection.patch_conf_threshold = ini.get_double("detection", "patch_conf_threshold", config.detection.patch_conf_threshold);
 
-    config.detectors.presence = load_model_config(ini, "detector.presence", config.detectors.presence);
     config.detectors.primary = load_model_config(ini, "detector.primary", config.detectors.primary);
     config.detectors.patch = load_model_config(ini, "detector.patch", config.detectors.patch);
 
@@ -196,10 +231,12 @@ AppConfig load_app_config(const std::filesystem::path& path) {
 
     config.plc.enabled = ini.get_bool("plc", "enabled", config.plc.enabled);
     config.plc.ack_timeout = ini.get_ms("plc", "ack_timeout_ms", config.plc.ack_timeout);
+    config.plc.presence_message_timeout = ini.get_ms("plc", "presence_message_timeout_ms", config.plc.presence_message_timeout);
     config.plc.max_retries = ini.get_int("plc", "max_retries", config.plc.max_retries);
     config.plc.retry_interval = ini.get_ms("plc", "retry_interval_ms", config.plc.retry_interval);
     config.plc.mock_fail_first_attempts = ini.get_int("plc", "mock_fail_first_attempts", config.plc.mock_fail_first_attempts);
     config.plc.mock_ack_latency = ini.get_ms("plc", "mock_ack_latency_ms", config.plc.mock_ack_latency);
+    config.plc.mock_presence_latency = ini.get_ms("plc", "mock_presence_latency_ms", config.plc.mock_presence_latency);
 
     config.storage.result_jsonl = ini.get("storage", "result_jsonl", config.storage.result_jsonl.string());
     config.storage.async_result_writes = ini.get_bool("storage", "async_result_writes", config.storage.async_result_writes);

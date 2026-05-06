@@ -21,7 +21,6 @@ struct ModelConfig {
 };
 
 struct DetectorConfig {
-    ModelConfig presence;
     ModelConfig primary;
     ModelConfig patch;
 };
@@ -40,6 +39,7 @@ struct ServiceConfig {
 
 struct AppConfig {
     RuntimeConfig runtime;
+    CameraDriverConfig camera_driver;
     DetectionConfig detection;
     DetectorConfig detectors;
     CorrelationConfig correlation;

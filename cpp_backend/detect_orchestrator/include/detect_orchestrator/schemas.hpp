@@ -19,6 +19,25 @@ struct CameraConfig {
     int id = 0;
     std::string name;
     std::filesystem::path watch_dir;
+    std::string serial_number;
+    std::string device_user_id;
+    int device_index = -1;
+    std::string trigger_source;
+    std::string trigger_activation;
+};
+
+struct CameraDriverConfig {
+    std::string backend = "mock";
+    std::filesystem::path output_dir = "artifacts/cpp_backend/captures";
+    Milliseconds frame_timeout{1500};
+    bool enable_ptp = true;
+    bool enable_chunk_timestamp = true;
+    bool host_correlate_camera_time = true;
+    bool apply_frame_settings = true;
+    std::string default_trigger_source = "Line0";
+    std::string default_trigger_activation = "RisingEdge";
+    std::string save_format = "jpg";
+    int jpeg_quality = 90;
 };
 
 struct RuntimeConfig {
@@ -38,7 +57,6 @@ struct DetectionConfig {
     bool presence_enabled = true;
     bool advance_on_presence = true;
     int advance_trigger_camera_id = 0;
-    double presence_conf_threshold = 0.50;
     bool patch_enabled = true;
     int patch_horizontal = 4;
     int patch_vertical = 5;
@@ -58,10 +76,12 @@ struct CorrelationConfig {
 struct PlcConfig {
     bool enabled = true;
     Milliseconds ack_timeout{200};
+    Milliseconds presence_message_timeout{200};
     int max_retries = 1;
     Milliseconds retry_interval{50};
     int mock_fail_first_attempts = 0;
     Milliseconds mock_ack_latency{0};
+    Milliseconds mock_presence_latency{0};
 };
 
 struct DetectionBox {

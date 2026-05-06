@@ -54,6 +54,11 @@ void write_bool(std::ostringstream& out, const std::string& key, bool value, boo
     }
 }
 
+std::string metadata_value(const FramePacket& packet, const std::string& key, const std::string& fallback = "") {
+    const auto found = packet.metadata.find(key);
+    return found == packet.metadata.end() ? fallback : found->second;
+}
+
 void write_boxes(std::ostringstream& out, const std::vector<DetectionBox>& boxes) {
     out << "\"boxes\":[";
     for (std::size_t i = 0; i < boxes.size(); ++i) {
@@ -245,6 +250,11 @@ std::string inspection_result_to_json(const InspectionResult& result) {
     write_string(out, "source_path", result.frame_packet.source_path.string());
     write_bool(out, "bag_present", result.presence_result.is_defect());
     write_number(out, "presence_ms", result.timing.presence_inference_ms);
+    write_string(out, "presence_source", metadata_value(result.frame_packet, "presence.source"));
+    write_string(out, "presence_message_id", metadata_value(result.frame_packet, "presence.message_id"));
+    write_string(out, "presence_detail", metadata_value(result.frame_packet, "presence.detail"));
+    write_bool(out, "presence_message_valid", metadata_value(result.frame_packet, "presence.message_valid", "true") == "true");
+    write_bool(out, "presence_timed_out", metadata_value(result.frame_packet, "presence.timed_out") == "true");
     write_string(out, "status", status_from_action(result.decision_result.control_action, result.decision_result.timed_out));
     write_string(out, "action", result.decision_result.control_action);
     write_string(out, "reason", result.decision_result.reason);

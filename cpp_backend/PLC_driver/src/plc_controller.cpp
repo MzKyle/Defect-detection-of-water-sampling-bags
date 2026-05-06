@@ -1,16 +1,88 @@
 #include "PLC_driver/plc_controller.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <optional>
+#include <thread>
+#include <vector>
 
 namespace waterbag {
 namespace {
+
+std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+bool contains_any(const std::string& value, const std::vector<std::string>& needles) {
+    const auto lowered = lower_copy(value);
+    return std::any_of(needles.begin(), needles.end(), [&](const auto& needle) {
+        return lowered.find(needle) != std::string::npos;
+    });
+}
+
+std::optional<bool> metadata_bool(const FramePacket& packet, const std::string& key) {
+    const auto found = packet.metadata.find(key);
+    if (found == packet.metadata.end()) {
+        return std::nullopt;
+    }
+    const auto value = lower_copy(found->second);
+    if (value == "1" || value == "true" || value == "yes" || value == "on" || value == "present") {
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "no" || value == "off" || value == "clear" || value == "absent") {
+        return false;
+    }
+    return std::nullopt;
+}
+
+std::string metadata_value(const FramePacket& packet, const std::string& key, const std::string& fallback = "") {
+    const auto found = packet.metadata.find(key);
+    return found == packet.metadata.end() ? fallback : found->second;
+}
 
 }  // namespace
 
 MockSemanticPlcController::MockSemanticPlcController(PlcConfig config)
     : config_(config),
       reliable_(config, std::make_unique<MockPlcTransport>(config)) {}
+
+PlcLaserPresence MockSemanticPlcController::read_laser_presence(const FramePacket& packet) {
+    const auto started = Clock::now();
+    if (config_.mock_presence_latency.count() > 0) {
+        std::this_thread::sleep_for(config_.mock_presence_latency);
+    }
+
+    PlcLaserPresence signal;
+    signal.camera_id = packet.camera_id;
+    signal.station_id = "camera" + std::to_string(packet.camera_id) + "_laser";
+    signal.message_id = metadata_value(packet, "plc.presence_message_id", "mock-laser-" + packet.frame_id);
+    signal.bag_id = metadata_value(packet, "plc.bag_id");
+    signal.received_at = SystemClock::now();
+    signal.latency_ms = elapsed_ms(started);
+    signal.timed_out = signal.latency_ms > static_cast<double>(config_.presence_message_timeout.count());
+    signal.message_valid = !signal.timed_out;
+
+    if (!config_.enabled) {
+        signal.bag_present = true;
+        signal.detail = "plc_disabled_presence_assumed";
+        signal.message_valid = true;
+        signal.timed_out = false;
+        return signal;
+    }
+
+    const auto explicit_laser_present = metadata_bool(packet, "plc.laser_present");
+    const auto explicit_presence = explicit_laser_present ? explicit_laser_present : metadata_bool(packet, "plc.presence_present");
+    signal.bag_present = explicit_presence.value_or(
+        !contains_any(packet.source_name, {"empty", "no_bag", "nobag", "background"}));
+    signal.detail = signal.timed_out
+        ? "mock_plc_laser_presence_timeout"
+        : (signal.bag_present ? "mock_plc_laser_bag_present" : "mock_plc_laser_clear");
+    return signal;
+}
 
 PlcAck MockSemanticPlcController::start_light_burst(const CaptureSession& session, const BurstPlan& plan) {
     const auto started = Clock::now();

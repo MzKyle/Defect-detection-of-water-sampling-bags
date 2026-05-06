@@ -24,9 +24,23 @@ struct PlcAck {
     double latency_ms = 0.0;
 };
 
+struct PlcLaserPresence {
+    bool message_valid = true;
+    bool bag_present = false;
+    bool timed_out = false;
+    int camera_id = 0;
+    std::string station_id;
+    std::string message_id;
+    std::string bag_id;
+    std::string detail = "ok";
+    double latency_ms = 0.0;
+    SystemClock::time_point received_at = SystemClock::now();
+};
+
 class IPlcController {
 public:
     virtual ~IPlcController() = default;
+    virtual PlcLaserPresence read_laser_presence(const FramePacket& packet) = 0;
     virtual PlcAck start_light_burst(const CaptureSession& session, const BurstPlan& plan) = 0;
     virtual std::vector<PlcBurstEvent> read_burst_events(const std::string& capture_session_id) = 0;
     virtual std::vector<ExecutionFeedback> release_station_after_capture(const CaptureSession& session) = 0;
@@ -38,6 +52,7 @@ class MockSemanticPlcController final : public IPlcController {
 public:
     explicit MockSemanticPlcController(PlcConfig config);
 
+    PlcLaserPresence read_laser_presence(const FramePacket& packet) override;
     PlcAck start_light_burst(const CaptureSession& session, const BurstPlan& plan) override;
     std::vector<PlcBurstEvent> read_burst_events(const std::string& capture_session_id) override;
     std::vector<ExecutionFeedback> release_station_after_capture(const CaptureSession& session) override;
