@@ -1,101 +1,87 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Waterbag Inspection 文档</title>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
-    <meta
-      name="description"
-      content="工业水样采集袋缺陷检测闭环系统项目文档"
-    />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, minimum-scale=1.0"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css"
-    />
-    <style>
-      :root {
-        --theme-color: #1e88e5;
-      }
-      .sidebar-nav li a {
-        font-size: 14px;
-      }
-      .markdown-section code {
-        border-radius: 3px;
-        font-size: 0.85em;
-      }
-      .markdown-section table {
-        display: table;
-        width: 100%;
-      }
-      .markdown-section blockquote {
-        border-left-color: #1e88e5;
-      }
-      .app-name-link img {
-        max-height: 36px;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="app">正在加载文档...</div>
-    <script>
-      window.$docsify = {
-        el: "#app",
-        name: "Waterbag Inspection",
-        repo: "",
-        loadSidebar: true,
-        loadNavbar: true,
-        subMaxLevel: 3,
-        auto2top: true,
-        search: {
-          placeholder: "搜索文档...",
-          noData: "未找到结果",
-          paths: "auto",
-          namespace: "waterbag-inspection",
-        },
-        copyCode: {
-          buttonText: "复制",
-          errorText: "失败",
-          successText: "已复制",
-        },
-        pagination: {
-          previousText: "上一节",
-          nextText: "下一节",
-          crossChapter: true,
-          crossChapterText: true,
-        },
-        markdown: {
-          renderer: {
-            code: function (code, lang) {
-              if (lang === "mermaid") {
-                return '<div class="mermaid">' + code + "</div>";
-              }
-              return this.origin.code.apply(this, arguments);
-            },
-          },
-        },
-      };
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
-    <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <script>
-      mermaid.initialize({ startOnLoad: false, theme: "default" });
-      window.$docsify.plugins = (window.$docsify.plugins || []).concat(
-        function (hook) {
-          hook.afterEach(function (html) {
-            return html;
+<head>
+  <meta charset="UTF-8">
+  <title>Waterbag Inspection 技术文档</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="description" content="Waterbag Inspection 水样袋缺陷检测系统的技术文档，覆盖实时链路、C++ 后端、模型工具、配置、观测和运行验证">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <style>
+    :root {
+      --theme-color: #0f766e;
+      --base-font-size: 16px;
+    }
+    .sidebar {
+      border-right: 1px solid #e5e7eb;
+    }
+    .markdown-section {
+      max-width: 1080px;
+      line-height: 1.75;
+    }
+    .markdown-section table {
+      display: table;
+      width: 100%;
+    }
+    .markdown-section code {
+      color: #0f766e;
+    }
+    .markdown-section h1,
+    .markdown-section h2,
+    .markdown-section h3 {
+      letter-spacing: 0;
+    }
+    .markdown-section pre > code {
+      color: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">加载文档...</div>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: false });
+    window.$docsify = {
+      name: 'Waterbag Inspection 技术文档',
+      repo: '',
+      loadSidebar: true,
+      loadNavbar: true,
+      subMaxLevel: 3,
+      auto2top: true,
+      search: {
+        paths: 'auto',
+        placeholder: '搜索',
+        noData: '没有结果',
+        depth: 3
+      },
+      copyCode: {
+        buttonText: '复制',
+        errorText: '失败',
+        successText: '已复制'
+      },
+      markdown: {
+        renderer: {
+          code: function(code, lang) {
+            if (lang === 'mermaid') {
+              return '<div class="mermaid">' + code + '</div>';
+            }
+            return this.origin.code.apply(this, arguments);
+          }
+        }
+      },
+      plugins: [
+        function(hook) {
+          hook.doneEach(function() {
+            if (window.mermaid) {
+              mermaid.run({ querySelector: '.mermaid' });
+            }
           });
-          hook.doneEach(function () {
-            mermaid.run({ querySelector: ".mermaid" });
-          });
-        },
-      );
-    </script>
-  </body>
+        }
+      ]
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2"></script>
+</body>
 </html>

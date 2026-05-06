@@ -1,16 +1,21 @@
-FROM python:3.11-slim
+FROM debian:bookworm-slim AS build
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV WATERBAG_CONFIG=config/demo.yaml
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates cmake g++ make \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-COPY requirements-demo.txt ./
-RUN pip install --no-cache-dir -r requirements-demo.txt
-
+WORKDIR /src
 COPY . .
 
-EXPOSE 5000
+RUN cmake -S cpp_backend -B build/cpp_backend \
+    && cmake --build build/cpp_backend -j
 
-CMD ["python", "-m", "waterbag_inspection", "serve", "--config", "config/demo.yaml"]
+FROM debian:bookworm-slim
+
+WORKDIR /app
+COPY --from=build /src/build/cpp_backend/waterbag_cpp_service /app/waterbag_cpp_service
+COPY --from=build /src/config/cpp_backend/demo.ini /app/config/cpp_backend/demo.ini
+COPY --from=build /src/demo_data /app/demo_data
+COPY --from=build /src/artifacts/.gitkeep /app/artifacts/.gitkeep
+
+CMD ["/app/waterbag_cpp_service", "--config", "config/cpp_backend/demo.ini", "--once"]

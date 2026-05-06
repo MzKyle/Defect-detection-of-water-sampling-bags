@@ -1,39 +1,40 @@
+CMAKE ?= cmake
 PYTHON ?= python
+BUILD_DIR ?= build/cpp_backend
+CONFIG ?= config/cpp_backend/demo.ini
 DATA ?= config/waterbag.yaml
 DEVICE ?= 0
-DOCS_PORT ?= 5173
 
-.PHONY: install-demo install-full serve-demo serve-docs seed-demo replay-demo inject-faults inject-timeout inject-ack-retry inject-out-of-order train-yolov8 train-yolo11 benchmark-models test smoke
+.PHONY: configure-cpp build-cpp run-cpp-demo run-cpp-once run-cpp-watch serve-dashboard sync-results test smoke install-train train-yolov8 train-yolo11 benchmark-models export-onnx python-check clean-cpp
 
-install-demo:
-	$(PYTHON) -m pip install -r requirements-demo.txt
+configure-cpp:
+	$(CMAKE) -S cpp_backend -B $(BUILD_DIR)
 
-install-full:
+build-cpp: configure-cpp
+	$(CMAKE) --build $(BUILD_DIR) -j
+
+run-cpp-demo: build-cpp
+	./$(BUILD_DIR)/waterbag_cpp_demo
+
+run-cpp-once: build-cpp
+	./$(BUILD_DIR)/waterbag_cpp_service --config $(CONFIG) --once
+
+run-cpp-watch: build-cpp
+	./$(BUILD_DIR)/waterbag_cpp_service --config $(CONFIG) --watch
+
+serve-dashboard:
+	$(PYTHON) -m waterbag_inspection serve --config $(CONFIG)
+
+sync-results:
+	$(PYTHON) -m waterbag_inspection sync-results --config $(CONFIG)
+
+test: build-cpp
+	ctest --test-dir $(BUILD_DIR) --output-on-failure
+
+smoke: run-cpp-once
+
+install-train:
 	$(PYTHON) -m pip install -r requirements.txt
-
-serve-demo:
-	$(PYTHON) -m waterbag_inspection serve --config config/demo.yaml
-
-serve-docs:
-	$(PYTHON) -m http.server $(DOCS_PORT) -d docs
-
-seed-demo:
-	$(PYTHON) -m waterbag_inspection seed-demo --output-root demo_data --clean
-
-replay-demo:
-	$(PYTHON) -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --reset-history
-
-inject-faults:
-	$(PYTHON) -m waterbag_inspection inject-faults --config config/demo.yaml --scenario all --output-root artifacts/fault_injection --clean
-
-inject-timeout:
-	$(PYTHON) -m waterbag_inspection inject-faults --config config/demo.yaml --scenario timeout --output-root artifacts/fault_injection --clean
-
-inject-ack-retry:
-	$(PYTHON) -m waterbag_inspection inject-faults --config config/demo.yaml --scenario ack-retry --output-root artifacts/fault_injection --clean
-
-inject-out-of-order:
-	$(PYTHON) -m waterbag_inspection inject-faults --config config/demo.yaml --scenario out-of-order --output-root artifacts/fault_injection --clean
 
 train-yolov8:
 	$(PYTHON) train_v8.py --data $(DATA) --device $(DEVICE)
@@ -49,9 +50,16 @@ benchmark-models:
 		--output artifacts/model_benchmarks.csv \
 		--json-output artifacts/model_benchmarks.json
 
-test:
-	$(PYTHON) -m pytest -q tests
+export-onnx:
+	$(PYTHON) export_ultralytics_onnx.py \
+		--weights runs/train/yolov8_waterbag/weights/best.pt \
+		--output artifacts/models/yolov8_waterbag.onnx \
+		--device $(DEVICE) \
+		--dynamic \
+		--simplify
 
-smoke:
-	$(PYTHON) -m waterbag_inspection seed-demo --output-root demo_data --clean
-	$(PYTHON) -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --limit 3 --reset-history
+python-check:
+	$(PYTHON) -m compileall waterbag_inspection train_ultralytics.py train_v8.py train_yolo11.py benchmark_ultralytics_models.py export_ultralytics_onnx.py predict_twostage_multilight.py benchmark_twostage_multilight.py
+
+clean-cpp:
+	$(CMAKE) -E rm -rf $(BUILD_DIR)

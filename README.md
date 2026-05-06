@@ -1,234 +1,185 @@
 # Waterbag Inspection
 
-> Open-source industrial vision demo for water sampling bag inspection
+> 面向水样检测袋的缺陷检测的工业视觉项目
+>
+> C++ 实时后端 / 多光源 burst / PLC 顺序分拣 / Python 观测层
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](#快速开始)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)](cpp_backend/README.md)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-A42E2B.svg)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-available-0A66C2?logo=readthedocs&logoColor=white)](docs/README.md)
-[![Pipeline](https://img.shields.io/badge/pipeline-perception--decision--actuation-2E8B57)](docs/architecture/README.md)
 
 
-- 双相机输入
-- 三光源 manifest 组包与多光源特征级融合推理
-- 一次整图检测 + 二次网格复检
-- 袋体级多相机关联
-- 重复缺陷识别
-- PLC / mock 控制命令下发与 Ack 重试
-- Web 实时展示与指标观测
-- SQLite 留档、异步 artifact 落盘、历史回放和故障注入验证
-- YOLOv8 / YOLO11 训练与 benchmark 选型入口
-- C++ 实时后端：可选 ONNX Runtime CUDA、burst 采图和 PLC 控制
 
-[Quick Start](#快速开始) · [Docs](docs/README.md) · [Architecture](docs/architecture/README.md) · [Fault Injection](docs/workflow/fault-injection.md) · [Contributing](CONTRIBUTING.md)
+Waterbag Inspection 把实时采图、光源时序、PLC 交互、袋级组包、缺陷检测、顺序分拣和结果追溯串成一套可运行、可测试、可观测的系统。
 
-## 为什么开源这个项目
+实时执行流程放在 C++ 后端，Python 保留给训练、导出、看板和离线观测。当前开源默认使用 mock 相机和 mock PLC 跑通全链路；生产接入时主要替换 `camera_driver` 和 `PLC_driver` 的底层适配器，主流程、数据结构、线程模型和结果落盘方式保持不变。
 
-- 它可以在没有真实相机、真实 PLC、真实模型权重的情况下完整演示链路行为
-- 它把在线运行、历史回放、故障注入和真实部署统一到同一套 pipeline 和数据模型里
-- 它适合作为工业视觉、机器人数据链路、感知执行闭环相关方向的学习和展示样板
+## 项目背景
 
-## 项目亮点
+水样袋通常是白色、半透明、低对比度的，缺陷可能是针孔、毛发、黑点、异物、压痕、折痕、污染或封边异常（详细可以看项目附加目录中的分类图片）。单张普通正面光图片很容易遇到两个问题：缺陷太浅看不见，或者折痕和反光太像缺陷。
+>人工做水袋缺陷检测时是在大背光灯下用手调换不同角度来找缺陷，这中多角度观察微小缺陷的能力对受硬件限制只能平放检测的机器来说是个很大的挑战
 
-- 标准化数据链路建模：`FramePacket -> PerceptionResult -> DecisionResult -> ControlCommand -> ExecutionFeedback`
-- 双相机袋体级结果聚合，不按单帧而按工件做最终决策
-- `pending_timeout_ms` 驱动的等待超时淘汰
-- 同机位乱序旧帧忽略，避免旧数据回滚新状态
-- PLC Ack / 超时 / 重试控制闭环
-- `runtime / replay / manual` 来源隔离的重复缺陷状态
-- Web 观测面板，展示 `timeout / ack_retry / stale_frame / plc_failure`
-- CLI 支持 `serve`、`seed-demo`、`inspect`、`inspect-multilight`、`assess-visibility`、`replay`、`inject-faults`
-- 多光源可见性矩阵以 shadow 模式记录证据链，辅助误杀分析和 fusion 诊断
-- SQLite 留档、指标聚合、历史回放和离线故障注入
+因此项目的核心思路和难点不在“模型”，而是把成像和控制先做好：
 
-## 架构速览
-
-```mermaid
-graph LR
-    CAM["Camera / Replay / Upload"] --> RT["Runtime / Queue"]
-    RT --> PIPE["InspectionPipeline"]
-    PIPE --> DET["Detector Backend<br/>Single / Multi-Light"]
-    PIPE --> ART["Async Artifact Writer"]
-    PIPE --> COR["BagCorrelator"]
-    PIPE --> REP["Repeat Tracker"]
-    PIPE --> POL["Decision Policy"]
-    POL --> PLC["PLC / Mock Controller"]
-    PIPE --> DB["SQLite Repository"]
-    DB --> WEB["Web Dashboard / API"]
-    PIPE --> WEB
+```text
+PLC 激光 presence gate
+-> 多光源 burst 采图
+-> A/B 面和多光源按 bag_id 齐套
+-> stage-1 整图粗检
+-> stage-2 微缺陷/patch 精检
+-> 袋级融合得到 OK / NG
+-> 按物理 BagID 顺序驱动末端分拣
+-> JSONL + SQLite + Web 看板留痕
 ```
 
-这条链路的核心目标不是“单张图有没有检出框”，而是把输入、感知、聚合、决策、控制、反馈和留档串成一条可观测、可回放、可验证的工业视觉闭环。
+## 系统架构
+
+```mermaid
+flowchart TB
+    subgraph HW["现场硬件与传感<br>On-site Hardware & Sensing"]
+        BAG["水样袋到位<br>Water Bag In Position"]
+        PLCIO["PLC 激光到位 / 频闪 / 末端分拣 IO<br>PLC Laser/Strobe/Sorting IO"]
+        CAMHW["工业相机 / 多光源<br>Industrial Camera & Multi-light Source"]
+    end
+
+    subgraph CPP["C++ 实时执行层<br>C++ Real-time Execution Layer"]
+        CAM["camera_driver<br>相机驱动"]
+        PLC["PLC_driver<br>PLC驱动"]
+        ORCH["detect_orchestrator<br>检测编排器"]
+        ASM["BagCaptureAssembler<br>水样袋采集组装器"]
+        DET["defect worker pool<br>缺陷检测线程池"]
+        COR["BagCorrelator<br>水样袋关联器"]
+        SORTBUF["SortReorderBuffer<br>分拣重排序缓冲区"]
+        SORTER["sorter thread<br>分拣执行线程"]
+        JSONL["JsonlResultRepository<br>JSONL结果仓库"]
+    end
+
+    subgraph PY["Python 观测与模型工具层<br>Python Observation & Model Layer"]
+        SYNC["JSONL -> SQLite<br>数据同步"]
+        WEB["Flask Dashboard / API<br>可视化看板接口"]
+        TRAIN["Ultralytics 训练 / benchmark / ONNX 导出<br>模型训练导出"]
+        MODEL["ONNX weights<br>ONNX模型权重"]
+    end
+
+    %% 硬件数据流
+    BAG --> PLCIO
+    PLCIO --> PLC
+    CAMHW --> CAM
+
+    %% 核心检测流程
+    CAM --> ORCH
+    PLC --> ORCH
+    ORCH --> ASM
+    ASM --> DET
+    DET --> COR
+    COR --> SORTBUF
+    SORTBUF --> SORTER
+
+    %% 分拣闭环（核心逻辑）
+    SORTER -.分拣指令.-> PLC
+    SORTER --> JSONL
+
+    %% 数据可视化
+    JSONL --> SYNC
+    SYNC --> WEB
+
+    %% 模型支撑
+    TRAIN --> MODEL
+    MODEL --> ORCH
+```
+
+实时链路：
+
+```text
+PLC 激光 presence gate
+-> 相机 arm burst / PLC start_light_burst
+-> 多光源 burst 采图和时序校验
+-> A/B 面按 bag_id 齐套
+-> stage-1 整图检测
+-> stage-2 微缺陷 / patch 检测
+-> 袋级融合得到 OK / NG
+-> SortReorderBuffer 按物理 BagID 顺序释放
+-> sorter thread 下发 end_sorter OK / NG
+-> JSONL 结果写盘
+```
+
+### 组件职责
+
+- `camera_driver` 只负责相机采图、burst session 和 `CaptureGroup` 组包，不决定 OK/NG。
+- `PLC_driver` 只负责激光到位消息、光源 burst、工位拨杆和末端分拣动作，不做视觉判断。
+- `detect_orchestrator` 负责 presence gate、袋级状态机、推理调度、结果融合和顺序分拣编排。
+- Python 只读 C++ 输出的 JSONL，同步到 SQLite 并提供 Dashboard，不参与产线实时控制。
+- 训练和导出的模型通过 ONNX / Ultralytics 进入 C++ 实时后端。
+
+## 项目代码文件
+
+- C++ 实时后端：相机输入、PLC、burst、推理调度、袋级状态机、顺序分拣。
+- Python 观测层：读取 C++ JSONL，同步到 SQLite，并提供 Dashboard 和查询接口。
+- Python 模型工具：YOLO 训练、benchmark 和 ONNX 导出。
+- 文档：从架构、配置、运行到模型工具都有详细讲解。
+- demo 数据：可直接用于本地复现和烟测。
 
 ## 快速开始
 
-### 1. 安装最小演示依赖
+最短路径先跑 mock 链路：
 
 ```bash
-pip install -r requirements-demo.txt
-```
-
-如果你希望接入真实模型、训练、Modbus 或更完整的依赖：
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. 生成演示样本
-
-```bash
-python -m waterbag_inspection seed-demo --output-root demo_data --clean
-```
-
-### 3. 启动 Web Demo
-
-```bash
-python app.py
-```
-
-或者：
-
-```bash
-python -m waterbag_inspection serve --config config/demo.yaml
-```
-
-### 4. 打开页面
-
-```text
-http://127.0.0.1:5000
-```
-
-## 常用命令
-
-```bash
-python -m waterbag_inspection serve --config config/demo.yaml
-python -m waterbag_inspection inspect --config config/demo.yaml --camera-id 1 --image demo_data/camera1/bag_0001_cam1_good.jpg --reset-history
-python -m waterbag_inspection inspect-multilight --config config/demo.yaml --camera-id 1 --manifest captures/bag_0001_cam1.json
-python -m waterbag_inspection assess-visibility --config config/demo.yaml --defect-type hair_fiber --backlight 0.2 --darkfield 0.9 --polarized 0.4
-python -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --reset-history
-python -m waterbag_inspection inject-faults --config config/demo.yaml --scenario all --output-root artifacts/fault_injection --clean
-python train_v8.py --data config/waterbag.yaml --device 0
-python train_yolo11.py --data config/waterbag.yaml --device 0
-python export_ultralytics_onnx.py --weights runs/train/yolov8_waterbag/weights/best.pt --output artifacts/models/yolov8_waterbag.onnx --device 0 --dynamic --simplify
-python benchmark_ultralytics_models.py --models runs/train/yolov8_waterbag/weights/best.pt runs/train/yolo11_waterbag/weights/best.pt --data config/waterbag.yaml
-```
-
-如果你更习惯用 Makefile，也可以直接使用：
-
-```bash
-make install-demo
-make serve-docs
-make seed-demo
-make serve-demo
-make replay-demo
-make inject-faults
-make train-yolov8
-make train-yolo11
-make benchmark-models
+make build-cpp
 make test
+make run-cpp-once
+make sync-results
+make serve-dashboard
 ```
 
-## 文档导航
-
-README 只保留开源首页需要的内容。更完整的项目说明、架构分析、算法细节、部署流程和接口文档都放在 [`docs/`](docs) 中。
-
-推荐按下面的路径进入：
-
-- 想先快速跑起来： [文档首页](docs/README.md) / [环境依赖与安装](docs/guide/prerequisites.md) / [启动 Demo](docs/guide/run-demo.md)
-- 想理解系统怎么设计： [系统架构总览](docs/architecture/README.md) / [模块全景](docs/architecture/module-overview.md) / [数据流](docs/architecture/data-flow.md)
-- 想看核心算法设计： [二阶段缺陷检测](docs/algorithms/two-stage-detection.md) / [多光源特征级融合](docs/algorithms/feature-level-multilight-fusion.md) / [多光源可见性矩阵](docs/algorithms/multilight-visibility-matrix.md)
-- 想看模型训练与选型： [YOLOv8 / YOLO11 选型](docs/algorithms/model-selection.md)
-- 想看 C++ 实时链路： [C++ 后端](cpp_backend/README.md) / [C++ 后端配置](config/cpp_backend/demo.ini)
-- 想接外部系统或页面： [Web API](docs/interfaces/web-api.md)
-- 想验证边界场景： [故障注入流程](docs/workflow/fault-injection.md) / [部署流程](docs/workflow/deployment-workflow.md)
-
-如果你想本地打开文档站：
+如果你更喜欢手动命令，也可以直接用 CMake 和 Python：
 
 ```bash
-make serve-docs
+cmake -S cpp_backend -B build/cpp_backend
+cmake --build build/cpp_backend -j
+ctest --test-dir build/cpp_backend --output-on-failure
+./build/cpp_backend/waterbag_cpp_service --config config/cpp_backend/demo.ini --once
+python -m waterbag_inspection sync-results --config config/cpp_backend/demo.ini
+python -m waterbag_inspection serve --config config/cpp_backend/demo.ini
 ```
 
-默认地址：
+默认看板地址是 `http://127.0.0.1:5000`。
 
-```text
-http://127.0.0.1:5173
-```
+## 核心特性
+
+- 默认 mock 相机和 mock PLC，方便先编译、测试、复现流程。
+- C++ 是唯一实时链路（高效快速，也方便后续继续做优化），避免 Python Web 和产线控制互相干扰。
+- PLC 激光 presence 负责有无袋判断，减少空背景采图和无效推理。
+- 两阶段检测把整图粗检和微缺陷补检拆开，适合水样袋这种低对比度场景，并提高效率和准确度。
+- 袋级状态机和顺序分拣按物理 BagID 组织，避免并发推理乱序打错袋。
+- JSONL + SQLite + Dashboard 提供完整结果记录，便于追踪每一次判定和时序问题。
+- ONNX Runtime、Ultralytics 训练和模型导出都保留在仓库里，方便从研究过渡到部署。
+
+## 进一步阅读
+
+如果想了解这套系统为什么这样拆，建议按下面顺序看：
+
+1. [工程文档总览](docs/README.md)
+2. [整体架构](docs/architecture/README.md)
+3. [C++ 后端](cpp_backend/README.md)
+4. [配置说明](docs/configuration/README.md)
+5. [运行与验证](docs/operations/README.md)
+6. [模型工具](docs/model-tools/README.md)
+7. [前端与数据库](docs/frontend/README.md)
+8. [清理边界说明](docs/cleanup/README.md)
 
 ## 仓库结构
 
 | 路径 | 说明 |
 | --- | --- |
-| `waterbag_inspection/` | 当前推荐维护的应用层代码 |
-| `config/` | Demo、生产模板、训练数据集和 C++ 后端配置 |
-| `docs/` | 详细项目文档、架构说明和工作流说明 |
-| `templates/` | Web 看板页面 |
-| `tests/` | 关键链路回归测试 |
-| `demo_data/` | Demo 相机输入目录 |
-| `artifacts/` | 运行结果、回放和故障注入产物 |
-| `train_ultralytics.py` | Ultralytics 通用训练入口 |
-| `train_v8.py` | YOLOv8 baseline 训练脚本 |
-| `train_yolo11.py` | YOLO11 candidate 训练脚本 |
-| `benchmark_ultralytics_models.py` | YOLOv8 / YOLO11 模型对比脚本 |
-| `cpp_backend/` | C++ 实时链路、ONNX Runtime CUDA detector、PLC 和 burst 采图 |
-| `legacy/` | 已归档的旧脚本和旧页面 |
-| `yolo_legacy/` | 已归档的 YOLOv5 上游遗留资产，不作为当前主入口 |
-
-## 这个仓库适合谁
-
-- 想看一个工业视觉 demo 怎样从脚本式代码重构成可维护工程
-- 想做机器人感知链路、视觉执行闭环、工业软件项目展示
-- 想学习如何把检测模型接到回放、控制、观测和故障验证链路里
-- 想把自己的视觉项目包装成更适合简历、开源和面试讲述的工程项目
-
-## Demo 能展示什么
-
-- 双相机正常到齐后整袋 `accept`
-- 单侧缺陷命中后整袋立即 `reject`
-- 一次整图未命中但二次 patch 复检命中微小缺陷
-- 三光源样本通过 manifest 合并成一次多光源模型调用
-- 重复缺陷触发 `repeat_alert`
-- 单侧缺失触发 `timeout`
-- PLC Ack 首次失败后自动重试
-- 旧帧迟到被识别为 `stale_frame_ignored`
-
-## 当前范围与说明
-
-- 仓库默认不附带真实生产权重
-- `config/production.example.yaml` 是部署模板，不代表开箱即用
-- demo 默认更强调链路结构、状态管理、回放与故障验证，而不是最终检测精度
-- 真实上线前仍需接入你的数据集、权重、相机落盘方式和 PLC 参数
-- 原始 YOLOv5 上游资产已集中归档到 `yolo_legacy/`，保留项目演化轨迹，但不作为当前主入口
-
-## 路线图
-
-- 将 `bag_id` 从文件名推断升级为显式产线触发 ID
-- 将生产相机 SDK 接入内存 ring buffer，减少 watch 目录落盘依赖
-- 增加更细粒度的相机掉线、网络延迟和 PLC 故障注入
-- 将重复缺陷状态从 JSON 迁移到数据库或缓存
-- 增加趋势统计、检索、过滤和报表导出
-- 引入真实历史数据做非 mock 回归验证
-- 增加 ONNX / TensorRT 导出和部署时延 benchmark
-
-## 参与贡献
-
-欢迎通过 Issue 或 Pull Request 参与改进，比较适合的方向包括：
-
-- 补充真实场景下的 replay 数据与 benchmark 结果
-- 改进文档、示例配置和开箱即用体验
-- 增强 Web 观测面板和指标查询能力
-- 增加更多故障注入场景和测试覆盖
-- 优化模型训练、部署导出和推理后端适配
-
-如果你准备提交改动，建议先看 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
+| `cpp_backend/` | C++ 实时执行链路、PLC、相机驱动和测试 |
+| `waterbag_inspection/` | Python 看板、SQLite 同步和 CLI |
+| `config/` | 运行配置、demo 配置和训练数据配置 |
+| `docs/` | 站点文档与分主题说明 |
+| `demo_data/` | 本地复现用的相机样本目录 |
+| `artifacts/` | 运行结果、导出模型和看板数据 |
+| `train_*.py` | YOLO 训练入口 |
+| `benchmark_ultralytics_models.py` | 模型评测和延迟对比 |
+| `export_ultralytics_onnx.py` | 导出 C++ 可加载的 ONNX 模型 |
 
 ## 许可证
 
-本仓库使用 [`LICENSE`](LICENSE) 中提供的 `AGPL-3.0` 许可证。
-
-如果你计划将本项目用于网络服务、闭源系统或商业场景，请先确认许可证要求。
-
-
-## 致谢
-
-- 感谢 YOLOv5 / Ultralytics YOLO 生态为训练、推理和导出提供的基础能力
-- 感谢这个项目早期在真实工业场景中的探索，它为后续工程化重构提供了真实问题来源
+本仓库使用 [AGPL-3.0](LICENSE) 许可证。

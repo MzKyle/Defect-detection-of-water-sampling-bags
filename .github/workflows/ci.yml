@@ -12,23 +12,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Configure C++ backend
+        run: cmake -S cpp_backend -B build/cpp_backend
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-dev.txt
+      - name: Build C++ backend
+        run: cmake --build build/cpp_backend -j
 
-      - name: Compile sources
-        run: python -m compileall app.py waterbag_inspection tests
+      - name: Run C++ tests
+        run: ctest --test-dir build/cpp_backend --output-on-failure
 
-      - name: Run unit tests
-        run: python -m pytest -q tests
+      - name: Check Python dashboard and tools
+        run: python -m compileall waterbag_inspection train_ultralytics.py train_v8.py train_yolo11.py benchmark_ultralytics_models.py export_ultralytics_onnx.py
 
-      - name: Smoke test demo CLI
-        run: |
-          python -m waterbag_inspection seed-demo --output-root demo_data --clean
-          python -m waterbag_inspection replay --config config/demo.yaml --source-root demo_data --limit 3 --reset-history
+      - name: Smoke sync dashboard database
+        run: python -m waterbag_inspection sync-results --config config/cpp_backend/demo.ini
