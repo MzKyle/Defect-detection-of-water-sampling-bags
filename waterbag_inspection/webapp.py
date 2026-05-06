@@ -1,40 +1,17 @@
 from __future__ import annotations
 
-import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
-from flask_socketio import SocketIO
+from flask import Flask, jsonify, render_template, request, send_file
 
-from .config import Settings
-from .schemas import InspectionResult
-from .service import InspectionRuntime
+from .config import ROOT_DIR, DashboardSettings
 from .storage import SQLiteDetectionRepository
 
 
-LOGGER = logging.getLogger(__name__)
-
-
-def create_web_app(settings: Settings, runtime: InspectionRuntime, repository: SQLiteDetectionRepository):
+def create_web_app(settings: DashboardSettings, repository: SQLiteDetectionRepository) -> Flask:
     app = Flask(__name__, template_folder=str(Path(__file__).resolve().parent.parent / "templates"))
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
-
-    def publish(result: InspectionResult) -> None:
-        summary = result.to_summary_dict()
-        socketio.emit(
-            "inspection_update",
-            {
-                **summary,
-                "image": result.image_base64,
-                "bag_summary": result.bag_summary.to_dict(),
-                "state_trace": [event.to_dict() for event in result.state_trace],
-                "final_count": len(result.final_boxes),
-            },
-        )
-
-    runtime.register_listener(publish)
 
     @app.route("/")
     def index():
@@ -42,24 +19,21 @@ def create_web_app(settings: Settings, runtime: InspectionRuntime, repository: S
             "index.html",
             app_name=settings.app.name,
             cameras=settings.cameras,
-            config_name=request.args.get("config", "demo"),
+            config_name=Path(settings.cpp_config_path).name,
         )
-
-    @app.route("/api/control/start", methods=["POST"])
-    def start_runtime():
-        runtime.start()
-        return jsonify({"status": "running"})
-
-    @app.route("/api/control/stop", methods=["POST"])
-    def stop_runtime():
-        runtime.stop()
-        return jsonify({"status": "stopped"})
 
     @app.route("/api/status")
     def status():
+        repository.sync_from_jsonl()
+        result_path = Path(settings.result_jsonl)
         return jsonify(
             {
-                "running": runtime.running,
+                "mode": "cpp_dashboard",
+                "cpp_config": settings.cpp_config_path,
+                "config_name": Path(settings.cpp_config_path).name,
+                "result_jsonl": settings.result_jsonl,
+                "result_jsonl_exists": result_path.exists(),
+                "database": settings.sqlite_path,
                 "cameras": [
                     {
                         "id": camera.camera_id,
@@ -73,13 +47,29 @@ def create_web_app(settings: Settings, runtime: InspectionRuntime, repository: S
 
     @app.route("/api/results/recent")
     def recent_results():
-        limit = min(int(request.args.get("limit", 20)), 50)
+        limit = min(int(request.args.get("limit", 20)), 200)
         return jsonify(repository.recent(limit))
 
     @app.route("/api/results/metrics")
     def metrics_results():
-        limit = min(int(request.args.get("limit", 40)), 200)
+        limit = min(int(request.args.get("limit", 80)), 1000)
         return jsonify(repository.metrics(limit))
+
+    @app.route("/api/results/sync", methods=["POST"])
+    def sync_results():
+        return jsonify({"synced": repository.sync_from_jsonl()})
+
+    @app.route("/api/source-image/<frame_id>")
+    def source_image(frame_id: str):
+        source_path = repository.source_path_for_frame(frame_id)
+        if not source_path:
+            return jsonify({"error": "frame not found"}), 404
+        path = Path(source_path)
+        if not path.is_absolute():
+            path = ROOT_DIR / path
+        if not path.exists() or not path.is_file():
+            return jsonify({"error": "source image not found"}), 404
+        return send_file(path)
 
     @app.route("/api/demo/upload", methods=["POST"])
     def demo_upload():
@@ -93,7 +83,7 @@ def create_web_app(settings: Settings, runtime: InspectionRuntime, repository: S
 
         suffix = Path(file.filename).suffix or ".jpg"
         filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{Path(file.filename).stem}{suffix}"
-        upload_path = Path(settings.runtime.upload_dir) / filename
+        upload_path = Path(settings.upload_dir) / filename
         upload_path.parent.mkdir(parents=True, exist_ok=True)
         file.save(upload_path)
 
@@ -102,8 +92,13 @@ def create_web_app(settings: Settings, runtime: InspectionRuntime, repository: S
         target_path = camera_dir / filename
         shutil.copy2(upload_path, target_path)
 
-        if not runtime.running:
-            runtime.submit_path(camera_id, str(target_path))
-        return jsonify({"status": "queued", "filename": filename, "camera_id": camera_id})
+        return jsonify(
+            {
+                "status": "copied_to_cpp_watch_dir",
+                "filename": filename,
+                "camera_id": camera_id,
+                "target_path": str(target_path),
+            }
+        )
 
-    return app, socketio
+    return app

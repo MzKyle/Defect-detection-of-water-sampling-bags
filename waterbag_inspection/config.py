@@ -1,37 +1,36 @@
 from __future__ import annotations
 
+import configparser
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-import yaml
-
-from .multilight import DEFAULT_LIGHT_ORDER
-from .visibility_matrix import DEFAULT_VISIBILITY_MATRIX_PATH
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG_PATH = ROOT_DIR / "config" / "demo.yaml"
+DEFAULT_CPP_CONFIG = ROOT_DIR / "config" / "cpp_backend" / "demo.ini"
 
 
-def _resolve_path(value: str | None) -> str | None:
+def _resolve_path(value: str | None) -> str:
     if not value:
-        return value
+        return ""
     path = Path(value)
     if path.is_absolute():
         return str(path)
     return str((ROOT_DIR / path).resolve())
 
 
+def _camera_id_from_section(section: str) -> int:
+    try:
+        return int(section.split(".", 1)[1])
+    except (IndexError, ValueError):
+        return 0
+
+
 @dataclass
 class AppConfig:
-    name: str = "Waterbag Inspection Demo"
+    name: str = "Waterbag Inspection Dashboard"
     host: str = "0.0.0.0"
     port: int = 5000
-    auto_start: bool = True
-    open_browser: bool = False
-    browser_url: str = "http://127.0.0.1:5000"
 
 
 @dataclass
@@ -42,216 +41,72 @@ class CameraConfig:
 
 
 @dataclass
-class ModelConfig:
-    backend: str = "mock"
-    weights_path: str | None = None
-    encrypted_path: str | None = None
-    key_path: str | None = None
-    device: str = "cpu"
-    imgsz: int = 640
-    conf_thres: float = 0.3
-    iou_thres: float = 0.3
-    light_order: list[str] = field(default_factory=lambda: list(DEFAULT_LIGHT_ORDER))
-    primary_light: str = "backlight"
-    input_format: str = "blchw"
-    output_format: str = "auto"
-    output_normalized: bool = False
-    class_names: list[str] = field(default_factory=lambda: ["anomaly"])
-
-
-@dataclass
-class MultiLightConfig:
-    enabled: bool = False
-    light_order: list[str] = field(default_factory=lambda: list(DEFAULT_LIGHT_ORDER))
-    primary_light: str = "backlight"
-    manifest_suffixes: list[str] = field(default_factory=lambda: [".json", ".manifest"])
-    visibility_matrix_path: str = str(DEFAULT_VISIBILITY_MATRIX_PATH.relative_to(ROOT_DIR))
-    visibility_assessment_enabled: bool = True
-    visibility_assessment_mode: str = "shadow"
-
-
-@dataclass
-class PatchConfig:
-    enabled: bool = True
-    horizontal: int = 4
-    vertical: int = 5
-    conf_thres: float = 0.2
-    iou_thres: float = 0.3
-    save_visualizations: bool = False
-    visualization_dir: str = "artifacts/patch_vis"
-
-
-@dataclass
-class StorageConfig:
-    backend: str = "sqlite"
-    sqlite_path: str = "artifacts/inspection.db"
-
-
-@dataclass
-class PLCConfig:
-    backend: str = "mock"
-    enabled: bool = False
-    port: str = "COM4"
-    baudrate: int = 115200
-    parity: str = "N"
-    stopbits: int = 1
-    bytesize: int = 8
-    timeout: float = 0.1
-    registers: dict[str, int] = field(
-        default_factory=lambda: {"cam1": 100, "cam2": 102, "alert": 104, "bag": 106}
-    )
-    alert_pulse_seconds: float = 0.2
-    ack_timeout_ms: float = 200.0
-    max_retries: int = 1
-    retry_interval_ms: float = 50.0
-    mock_ack_latency_ms: float = 0.0
-    mock_fail_first_attempts: int = 0
-
-
-@dataclass
-class CorrelationConfig:
-    enabled: bool = True
-    expected_camera_ids: list[int] = field(default_factory=list)
-    hold_non_defect_until_complete: bool = True
-    pending_timeout_ms: float = 1500.0
-    timeout_action: str = "reject"
-    finalized_retention_ms: float = 5000.0
-
-
-@dataclass
-class RepeatConfig:
-    enabled: bool = True
-    history_path: str = "artifacts/repeat_history.json"
-    history_namespace: str = "default"
-    isolate_by_source: bool = True
-    iou_threshold: float = 0.5
-    max_entries_per_camera: int = 50
-
-
-@dataclass
-class RuntimeConfig:
-    backup_dir: str = "artifacts/backups"
-    result_dir: str = "artifacts/results"
-    upload_dir: str = "artifacts/uploads"
-    cooldown_seconds: float = 0.5
-    file_ready_timeout_seconds: float = 5.0
-    file_stable_seconds: float = 0.3
-    queue_poll_interval_seconds: float = 0.2
-    async_artifact_writes: bool = False
-    artifact_queue_size: int = 128
-    artifact_drop_when_full: bool = True
-    artifact_flush_timeout_seconds: float = 2.0
-
-
-@dataclass
-class Settings:
+class DashboardSettings:
     app: AppConfig
     cameras: list[CameraConfig]
-    primary_model: ModelConfig
-    patch_model: ModelConfig
-    patch_detection: PatchConfig
-    storage: StorageConfig
-    plc: PLCConfig
-    correlation: CorrelationConfig
-    repeat_detection: RepeatConfig
-    runtime: RuntimeConfig
-    multilight: MultiLightConfig
+    result_jsonl: str
+    sqlite_path: str
+    upload_dir: str
+    cpp_config_path: str
 
     @property
     def camera_map(self) -> dict[int, CameraConfig]:
         return {camera.camera_id: camera for camera in self.cameras}
 
 
-def _camera_from_dict(data: dict[str, Any]) -> CameraConfig:
-    return CameraConfig(
-        camera_id=int(data["id"]),
-        name=str(data["name"]),
-        watch_dir=_resolve_path(str(data["watch_dir"])) or "",
-    )
-
-
-def _model_from_dict(data: dict[str, Any]) -> ModelConfig:
-    class_names = data.get("class_names", ["anomaly"])
-    if isinstance(class_names, dict):
-        class_names = [
-            str(value)
-            for _, value in sorted(class_names.items(), key=lambda item: int(item[0]))
-        ]
-    return ModelConfig(
-        backend=str(data.get("backend", "mock")),
-        weights_path=_resolve_path(data.get("weights_path")),
-        encrypted_path=_resolve_path(data.get("encrypted_path")),
-        key_path=_resolve_path(data.get("key_path")),
-        device=str(data.get("device", "cpu")),
-        imgsz=int(data.get("imgsz", 640)),
-        conf_thres=float(data.get("conf_thres", 0.3)),
-        iou_thres=float(data.get("iou_thres", 0.3)),
-        light_order=[str(item) for item in data.get("light_order", DEFAULT_LIGHT_ORDER)],
-        primary_light=str(data.get("primary_light", "backlight")),
-        input_format=str(data.get("input_format", "blchw")),
-        output_format=str(data.get("output_format", "auto")),
-        output_normalized=bool(data.get("output_normalized", False)),
-        class_names=[str(item) for item in class_names],
-    )
-
-
-def load_settings(config_path: str | None = None) -> Settings:
+def load_settings(config_path: str | None = None) -> DashboardSettings:
     source = Path(
         config_path
-        or os.getenv("WATERBAG_CONFIG")
-        or DEFAULT_CONFIG_PATH
+        or os.getenv("WATERBAG_CPP_CONFIG")
+        or DEFAULT_CPP_CONFIG
     )
-    with source.open("r", encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle) or {}
+    if not source.is_absolute():
+        source = (ROOT_DIR / source).resolve()
 
-    app = AppConfig(**(raw.get("app") or {}))
-    cameras = [_camera_from_dict(item) for item in raw.get("cameras", [])]
+    parser = configparser.ConfigParser()
+    parser.read(source, encoding="utf-8")
+
+    app = AppConfig(
+        name=os.getenv("WATERBAG_DASHBOARD_NAME", "Waterbag Inspection Dashboard"),
+        host=os.getenv("WATERBAG_DASHBOARD_HOST", "0.0.0.0"),
+        port=int(os.getenv("WATERBAG_DASHBOARD_PORT", "5000")),
+    )
+
+    cameras: list[CameraConfig] = []
+    for section in sorted(parser.sections()):
+        if not section.startswith("camera."):
+            continue
+        camera_id = parser.getint(section, "id", fallback=_camera_id_from_section(section))
+        if camera_id <= 0:
+            continue
+        cameras.append(
+            CameraConfig(
+                camera_id=camera_id,
+                name=parser.get(section, "name", fallback=f"Camera {camera_id}"),
+                watch_dir=_resolve_path(parser.get(section, "watch_dir", fallback="")),
+            )
+        )
     if not cameras:
-        raise ValueError("At least one camera must be configured.")
+        cameras = [
+            CameraConfig(1, "A-camera", _resolve_path("demo_data/camera1")),
+            CameraConfig(2, "B-camera", _resolve_path("demo_data/camera2")),
+        ]
 
-    primary_model = _model_from_dict(raw.get("models", {}).get("primary", {}))
-    patch_model = _model_from_dict(raw.get("models", {}).get("patch", {}))
-
-    patch_detection = PatchConfig(**(raw.get("patch_detection") or {}))
-    patch_detection.visualization_dir = (
-        _resolve_path(patch_detection.visualization_dir) or patch_detection.visualization_dir
+    result_jsonl = _resolve_path(
+        parser.get("storage", "result_jsonl", fallback="artifacts/cpp_backend/results.jsonl")
+    )
+    sqlite_path = _resolve_path(
+        os.getenv("WATERBAG_DASHBOARD_DB", "artifacts/dashboard/inspection.db")
+    )
+    upload_dir = _resolve_path(
+        os.getenv("WATERBAG_DASHBOARD_UPLOAD_DIR", "artifacts/uploads")
     )
 
-    storage = StorageConfig(**(raw.get("storage") or {}))
-    storage.sqlite_path = _resolve_path(storage.sqlite_path) or storage.sqlite_path
-
-    plc = PLCConfig(**(raw.get("plc") or {}))
-    multilight = MultiLightConfig(**(raw.get("multilight") or {}))
-    multilight.light_order = [str(item) for item in multilight.light_order]
-    multilight.manifest_suffixes = [str(item) for item in multilight.manifest_suffixes]
-    multilight.visibility_matrix_path = (
-        _resolve_path(multilight.visibility_matrix_path)
-        or multilight.visibility_matrix_path
-    )
-    correlation = CorrelationConfig(**(raw.get("correlation") or {}))
-    if not correlation.expected_camera_ids:
-        correlation.expected_camera_ids = [camera.camera_id for camera in cameras]
-
-    repeat_detection = RepeatConfig(**(raw.get("repeat_detection") or {}))
-    repeat_detection.history_path = (
-        _resolve_path(repeat_detection.history_path) or repeat_detection.history_path
-    )
-
-    runtime = RuntimeConfig(**(raw.get("runtime") or {}))
-    runtime.backup_dir = _resolve_path(runtime.backup_dir) or runtime.backup_dir
-    runtime.result_dir = _resolve_path(runtime.result_dir) or runtime.result_dir
-    runtime.upload_dir = _resolve_path(runtime.upload_dir) or runtime.upload_dir
-
-    return Settings(
+    return DashboardSettings(
         app=app,
-        cameras=cameras,
-        primary_model=primary_model,
-        patch_model=patch_model,
-        patch_detection=patch_detection,
-        storage=storage,
-        plc=plc,
-        correlation=correlation,
-        repeat_detection=repeat_detection,
-        runtime=runtime,
-        multilight=multilight,
+        cameras=sorted(cameras, key=lambda item: item.camera_id),
+        result_jsonl=result_jsonl,
+        sqlite_path=sqlite_path,
+        upload_dir=upload_dir,
+        cpp_config_path=str(source),
     )

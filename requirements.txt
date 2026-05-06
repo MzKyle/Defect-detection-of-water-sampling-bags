@@ -1,15 +1,9 @@
-# Full runtime for development and production-style validation
+# Python is kept for the Web dashboard/SQLite result store and offline model tools.
 Flask>=3.0.0
-Flask-SocketIO>=5.3.6
-PyYAML>=6.0.1
-watchdog>=4.0.0
-numpy>=1.26.4,<2.0
-opencv-python-headless>=4.9.0.80,<4.12
-cryptography>=42.0.8
-pymodbus>=3.6.8
 ultralytics>=8.3.0
 torch>=2.2.0
 torchvision>=0.17.0
+numpy>=1.26.0
 pandas>=2.2.2
 matplotlib>=3.8.4
 seaborn>=0.13.2

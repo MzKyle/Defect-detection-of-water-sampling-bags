@@ -3,21 +3,18 @@ requires = ["setuptools>=70.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "waterbag-inspection-demo"
+name = "waterbag-inspection-dashboard"
 version = "0.1.0"
-description = "Industrial waterbag inspection demo and refactoring scaffold"
+description = "Python dashboard, SQLite result store, and model tools for the C++ waterbag backend"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "Flask>=3.0.0",
-  "Flask-SocketIO>=5.3.6",
-  "PyYAML>=6.0.1",
-  "watchdog>=4.0.0",
-  "opencv-python-headless>=4.9.0.80",
+  "ultralytics>=8.3.0",
+  "torch>=2.2.0",
+  "Pillow>=10.3.0",
+  "numpy>=1.26.0",
 ]
 
 [project.scripts]
 waterbag-inspection = "waterbag_inspection.cli:main"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
