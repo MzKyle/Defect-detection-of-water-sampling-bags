@@ -68,7 +68,7 @@ drop_results_when_full = true
 
 ## Detector
 
-presence 已改为 PLC 激光到位消息，不再配置独立的 `detector.presence` 模型。当前只有 primary 和 patch 两个视觉 detector 段：
+当前有 primary 和 patch 两个视觉 detector 段：
 
 ```ini
 [detector.primary]
@@ -185,7 +185,7 @@ patch_conf_threshold = 0.20
 | `primary_conf_threshold` | stage-1 框过滤阈值 |
 | `patch_conf_threshold` | stage-2 框过滤阈值 |
 
-阈值建议从验证集和现场样本一起定，不要只看公开指标。水样袋项目通常更怕漏检，阈值调低会提升召回，但会增加误检和分拣 NG 数。
+阈值建议从验证集和现场样本一起定，不要只看公开指标。当前水样袋项目通常更怕漏检，阈值调低会提升召回，但会增加误检和分拣 NG 数。
 
 ## Correlation
 
@@ -269,4 +269,4 @@ names:
   0: anomaly
 ```
 
-真实项目可以把 `names` 扩展成更细的缺陷类别，例如 `pin_hole`、`hair`、`foreign_object`、`seal_defect`、`stain`。但如果上线分拣只需要 OK/NG，早期用一个 `anomaly` 类可以减少标注一致性问题。
+可以把 `names` 扩展成更细的缺陷类别，例如 `pin_hole`、`hair`、`foreign_object`、`seal_defect`、`stain`。但如果上线分拣只需要 OK/NG，早期用一个 `anomaly` 类可以减少标注一致性问题。

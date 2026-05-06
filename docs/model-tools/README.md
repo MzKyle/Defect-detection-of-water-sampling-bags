@@ -15,7 +15,7 @@ flowchart LR
     ONNX --> CPP["C++ ONNX Runtime detector"]
 ```
 
-C++ 后端把视觉模型分成两个 detector；有无袋 presence 已由 PLC 激光消息提供：
+C++ 后端把视觉模型有两个 detector：
 
 | Detector | 运行阶段 | 建议模型目标 |
 | --- | --- | --- |

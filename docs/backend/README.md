@@ -288,8 +288,7 @@ worker_index = hash(bag_id) % defect_worker_count
 | `control_ms` | 末端分拣 PLC 动作耗时 |
 | `total_ms` | 当前结果从进入处理到输出的总耗时 |
 
-已经实现的优化点：
-
+目前采取的优化措施：
 - PLC 激光 presence gate 过滤无袋工位。
 - station 和 defect 拆开，采图后先放行机构。
 - stage-2 只在 stage-1 未发现缺陷时运行。
