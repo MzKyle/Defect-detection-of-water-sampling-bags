@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(waterbag_cpp_backend LANGUAGES CXX)
 
 option(WATERBAG_ENABLE_ONNXRUNTIME "Enable optional ONNX Runtime CUDA detector" OFF)
+option(WATERBAG_REQUIRE_HIKVISION_MVS "Require Hikvision MVS SDK for the real camera driver" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,8 +19,13 @@ find_library(HIKVISION_MVS_LIBRARY
     PATHS /opt/MVS/lib/64 /opt/MVS/lib
 )
 
-if (NOT HIKVISION_MVS_INCLUDE_DIR OR NOT HIKVISION_MVS_LIBRARY)
+set(WATERBAG_HAS_HIKVISION_MVS OFF)
+if (HIKVISION_MVS_INCLUDE_DIR AND HIKVISION_MVS_LIBRARY)
+    set(WATERBAG_HAS_HIKVISION_MVS ON)
+elseif (WATERBAG_REQUIRE_HIKVISION_MVS)
     message(FATAL_ERROR "camera_driver requires Hikvision MVS SDK. Expected MvCameraControl.h and libMvCameraControl under /opt/MVS.")
+else()
+    message(STATUS "Hikvision MVS SDK not found; building the camera_driver stub for mock-based CI and local demo runs.")
 endif()
 
 add_library(detect_orchestrator_common
@@ -30,10 +36,17 @@ add_library(detect_orchestrator_common
     detect_orchestrator/src/storage.cpp
 )
 
-add_library(camera_driver
+set(camera_driver_sources
     camera_driver/src/burst_capture.cpp
-    camera_driver/src/hikvision_mvs_burst_capture.cpp
 )
+
+if (WATERBAG_HAS_HIKVISION_MVS)
+    list(APPEND camera_driver_sources camera_driver/src/hikvision_mvs_burst_capture.cpp)
+else()
+    list(APPEND camera_driver_sources camera_driver/src/hikvision_mvs_burst_capture_stub.cpp)
+endif()
+
+add_library(camera_driver ${camera_driver_sources})
 
 add_library(mock_camera_driver
     mock_camera_driver/src/mock_burst_capture.cpp
@@ -71,13 +84,18 @@ target_include_directories(mock_camera_driver
 target_link_libraries(camera_driver
     PUBLIC
         detect_orchestrator_common
-    PRIVATE
-        ${HIKVISION_MVS_LIBRARY}
-        Threads::Threads
 )
-target_include_directories(camera_driver PRIVATE ${HIKVISION_MVS_INCLUDE_DIR})
-get_filename_component(HIKVISION_MVS_LIBRARY_DIR "${HIKVISION_MVS_LIBRARY}" DIRECTORY)
-set_target_properties(camera_driver PROPERTIES BUILD_RPATH "${HIKVISION_MVS_LIBRARY_DIR}")
+
+if (WATERBAG_HAS_HIKVISION_MVS)
+    target_link_libraries(camera_driver
+        PRIVATE
+            ${HIKVISION_MVS_LIBRARY}
+            Threads::Threads
+    )
+    target_include_directories(camera_driver PRIVATE ${HIKVISION_MVS_INCLUDE_DIR})
+    get_filename_component(HIKVISION_MVS_LIBRARY_DIR "${HIKVISION_MVS_LIBRARY}" DIRECTORY)
+    set_target_properties(camera_driver PROPERTIES BUILD_RPATH "${HIKVISION_MVS_LIBRARY_DIR}")
+endif()
 
 target_link_libraries(mock_camera_driver
     PUBLIC
