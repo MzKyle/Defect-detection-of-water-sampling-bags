@@ -1,12 +1,18 @@
 # 配置说明
 
-当前运行配置以 C++ INI 为主，默认文件是：
+当前运行配置以 C++ INI 为主。无硬件回归默认文件是：
 
 ```text
 config/cpp_backend/demo.ini
 ```
 
-这个文件同时服务 C++ 后端和 Python 看板：C++ 读取实时参数，Python 看板读取相机目录和 JSONL 路径。
+真实硬件链路样例是：
+
+```text
+config/cpp_backend/hardware_hik_mvs_modbus.ini
+```
+
+INI 同时服务 C++ 后端和 Python 看板：C++ 读取实时参数，Python 看板读取相机目录和 JSONL 路径。
 
 ## 配置总览
 
@@ -22,6 +28,7 @@ config/cpp_backend/demo.ini
 | `[detection]` | PLC presence gate、stage 阈值、patch 开关和工位放行策略 |
 | `[correlation]` | A/B 面袋级关联、对端相机等待和 timeout 策略 |
 | `[plc]` | PLC 开关、ack 超时、重试和 mock 故障注入 |
+| `[plc.modbus_tcp]` | Modbus TCP host、unit id、寄存器/线圈地址和 ack 语义 |
 
 ## Service
 
@@ -130,6 +137,8 @@ bag_500_cam2_good.jpg -> bag_id = bag_500
 
 ```ini
 [runtime]
+input_mode = watch_dir
+publish_no_bag_results = true
 poll_interval_ms = 100
 file_stable_ms = 300
 file_ready_timeout_ms = 5000
@@ -143,6 +152,8 @@ sort_result_timeout_ms = 1500
 
 | 键 | 作用 |
 | --- | --- |
+| `input_mode` | `watch_dir` 用目录文件触发，`plc_presence` 用 PLC presence 触发真实硬件链路 |
+| `publish_no_bag_results` | PLC presence 轮询模式下是否把无袋结果写入 JSONL |
 | `poll_interval_ms` | watch 模式扫描相机目录的间隔 |
 | `file_stable_ms` | 文件大小和 mtime 需要稳定多久才读取 |
 | `file_ready_timeout_ms` | 等待文件写完的最长时间 |
@@ -214,6 +225,7 @@ finalized_retention_ms = 5000
 
 ```ini
 [plc]
+backend = mock
 enabled = true
 ack_timeout_ms = 200
 presence_message_timeout_ms = 200
@@ -226,6 +238,7 @@ mock_presence_latency_ms = 0
 
 | 键 | 说明 |
 | --- | --- |
+| `backend` | `mock` 或 `modbus_tcp` |
 | `enabled` | false 时 PLC 命令直接视作成功，适合纯软件验证 |
 | `ack_timeout_ms` | 单次命令 ack 超时 |
 | `presence_message_timeout_ms` | 等待 PLC 激光到位消息的超时，超时后 `status=timeout` 且 `reason=plc_laser_presence_timeout` |
@@ -237,7 +250,34 @@ mock_presence_latency_ms = 0
 
 真实产线中，PLC 参数要和机构动作时间、通信协议、IO 响应和分拣窗口一起标定。ack 超时过短会误判失败，过长会拖慢 fail-safe 反应。
 
-生产 PLC 适配器需要把现场激光传感器消息解码到 `PlcLaserPresence`：`bag_present=true` 时才进入 burst 采图；`bag_present=false` 时记录 `no_bag`；如果 PLC 消息携带递增 BagID，主流程会优先使用该 BagID 做组包和顺序分拣。
+真实硬件 demo 使用 `backend=modbus_tcp`。参考映射：
+
+```ini
+[plc.modbus_tcp]
+host = 192.168.1.50
+port = 502
+unit_id = 1
+discrete_input_bag_present = 0
+input_register_message_id = 0
+input_register_bag_id_high = 1
+input_register_bag_id_low = 2
+input_register_ack_status = 10
+input_register_fault_code = 11
+holding_register_command_id = 0
+holding_register_bag_id_high = 1
+holding_register_bag_id_low = 2
+holding_register_action_code = 5
+holding_register_burst_frame_count = 6
+holding_register_burst_frame_base = 20
+coil_start_burst = 0
+coil_station_release = 1
+coil_station_push = 2
+coil_station_restore = 3
+coil_sort_ok = 10
+coil_sort_ng = 11
+```
+
+完整 register map、动作码和排障说明见 [硬件在环复现](../hardware/README.md)。PLC 侧需要把现场激光传感器消息解码到这些寄存器/线圈：`bag_present=true` 时 C++ 才进入 burst 采图；如果 PLC 消息携带递增 BagID，主流程会优先使用该 BagID 做组包和顺序分拣。
 
 ## Python 看板环境变量
 

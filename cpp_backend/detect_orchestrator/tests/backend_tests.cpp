@@ -1,8 +1,16 @@
 #include <cassert>
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <thread>
+#include <unistd.h>
 #include <string>
 
 #include "detect_orchestrator/bag_runtime.hpp"
@@ -68,6 +76,225 @@ bool trace_contains(const waterbag::InspectionResult& result, const std::string&
         return item.find(needle) != std::string::npos;
     });
 }
+
+void push_u16(std::vector<std::uint8_t>& bytes, std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
+}
+
+std::uint16_t read_u16(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
+    return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8) | bytes[offset + 1]);
+}
+
+bool recv_exact(int fd, std::vector<std::uint8_t>& bytes, std::size_t size) {
+    bytes.assign(size, 0);
+    std::size_t received = 0;
+    while (received < size) {
+        const auto ret = recv(fd, bytes.data() + received, size - received, 0);
+        if (ret <= 0) {
+            return false;
+        }
+        received += static_cast<std::size_t>(ret);
+    }
+    return true;
+}
+
+class FakeModbusTcpServer {
+public:
+    FakeModbusTcpServer() {
+        discrete_inputs_.resize(128);
+        input_registers_.resize(128);
+        holding_registers_.resize(128);
+        coils_.resize(128);
+
+        server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+        assert(server_fd_ >= 0);
+        int enabled = 1;
+        setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled));
+
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(0);
+        assert(bind(server_fd_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+        assert(listen(server_fd_, 16) == 0);
+
+        socklen_t length = sizeof(address);
+        assert(getsockname(server_fd_, reinterpret_cast<sockaddr*>(&address), &length) == 0);
+        port_ = ntohs(address.sin_port);
+        running_ = true;
+        thread_ = std::thread(&FakeModbusTcpServer::accept_loop, this);
+    }
+
+    ~FakeModbusTcpServer() {
+        stop();
+    }
+
+    int port() const {
+        return port_;
+    }
+
+    void set_presence(bool present) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        discrete_inputs_[0] = present;
+    }
+
+    void set_message_id(std::uint16_t value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        input_registers_[0] = value;
+    }
+
+    void set_bag_id(std::uint32_t value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        input_registers_[1] = static_cast<std::uint16_t>((value >> 16) & 0xFFFFU);
+        input_registers_[2] = static_cast<std::uint16_t>(value & 0xFFFFU);
+    }
+
+    bool coil(std::size_t address) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return address < coils_.size() && coils_[address];
+    }
+
+    std::uint16_t holding_register(std::size_t address) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return address < holding_registers_.size() ? holding_registers_[address] : 0;
+    }
+
+private:
+    void stop() {
+        bool expected = true;
+        if (!running_.compare_exchange_strong(expected, false)) {
+            return;
+        }
+        shutdown(server_fd_, SHUT_RDWR);
+        close(server_fd_);
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+    void accept_loop() {
+        while (running_) {
+            const int client = accept(server_fd_, nullptr, nullptr);
+            if (client < 0) {
+                if (running_) {
+                    continue;
+                }
+                break;
+            }
+            handle_client(client);
+            close(client);
+        }
+    }
+
+    void handle_client(int client) {
+        std::vector<std::uint8_t> header;
+        if (!recv_exact(client, header, 7)) {
+            return;
+        }
+        const auto length = read_u16(header, 4);
+        if (length < 2) {
+            return;
+        }
+        std::vector<std::uint8_t> pdu;
+        if (!recv_exact(client, pdu, static_cast<std::size_t>(length - 1))) {
+            return;
+        }
+        if (pdu.empty()) {
+            return;
+        }
+
+        const auto function = pdu[0];
+        std::vector<std::uint8_t> response_pdu;
+        try {
+            if (function == 0x02) {
+                response_pdu = read_bits(pdu);
+            } else if (function == 0x04) {
+                response_pdu = read_input_registers(pdu);
+            } else if (function == 0x05) {
+                response_pdu = write_single_coil(pdu);
+            } else if (function == 0x06) {
+                response_pdu = write_single_register(pdu);
+            } else {
+                response_pdu = {static_cast<std::uint8_t>(function | 0x80U), 0x01};
+            }
+        } catch (...) {
+            response_pdu = {static_cast<std::uint8_t>(function | 0x80U), 0x04};
+        }
+
+        std::vector<std::uint8_t> response;
+        response.push_back(header[0]);
+        response.push_back(header[1]);
+        response.push_back(0);
+        response.push_back(0);
+        push_u16(response, static_cast<std::uint16_t>(response_pdu.size() + 1));
+        response.push_back(header[6]);
+        response.insert(response.end(), response_pdu.begin(), response_pdu.end());
+        send(client, response.data(), response.size(), 0);
+    }
+
+    std::vector<std::uint8_t> read_bits(const std::vector<std::uint8_t>& pdu) {
+        const auto address = read_u16(pdu, 1);
+        const auto count = read_u16(pdu, 3);
+        std::vector<std::uint8_t> response{0x02, static_cast<std::uint8_t>((count + 7) / 8), 0};
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (std::uint16_t i = 0; i < count; ++i) {
+            if (address + i < discrete_inputs_.size() && discrete_inputs_[address + i]) {
+                response[2 + i / 8] |= static_cast<std::uint8_t>(1U << (i % 8));
+            }
+        }
+        return response;
+    }
+
+    std::vector<std::uint8_t> read_input_registers(const std::vector<std::uint8_t>& pdu) {
+        const auto address = read_u16(pdu, 1);
+        const auto count = read_u16(pdu, 3);
+        std::vector<std::uint8_t> response{0x04, static_cast<std::uint8_t>(count * 2)};
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (std::uint16_t i = 0; i < count; ++i) {
+            const auto value = address + i < input_registers_.size() ? input_registers_[address + i] : 0;
+            push_u16(response, value);
+        }
+        return response;
+    }
+
+    std::vector<std::uint8_t> write_single_coil(const std::vector<std::uint8_t>& pdu) {
+        const auto address = read_u16(pdu, 1);
+        const bool value = read_u16(pdu, 3) == 0xFF00;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (address < coils_.size()) {
+                coils_[address] = value;
+            }
+            if (value) {
+                input_registers_[10] = 1;
+            }
+        }
+        return pdu;
+    }
+
+    std::vector<std::uint8_t> write_single_register(const std::vector<std::uint8_t>& pdu) {
+        const auto address = read_u16(pdu, 1);
+        const auto value = read_u16(pdu, 3);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (address < holding_registers_.size()) {
+                holding_registers_[address] = value;
+            }
+        }
+        return pdu;
+    }
+
+    int server_fd_ = -1;
+    int port_ = 0;
+    std::atomic_bool running_{false};
+    std::thread thread_;
+    mutable std::mutex mutex_;
+    std::vector<bool> discrete_inputs_;
+    std::vector<std::uint16_t> input_registers_;
+    std::vector<std::uint16_t> holding_registers_;
+    std::vector<bool> coils_;
+};
 
 std::vector<std::string> command_actions_for_station(const waterbag::InspectionResult& result, int camera_id) {
     std::vector<std::string> actions;
@@ -344,8 +571,100 @@ void test_sort_reorder_buffer_releases_results_by_bag_order() {
     assert(ready[1].frame_packet.bag_id == p2.bag_id);
 }
 
+waterbag::PlcConfig make_modbus_test_config(int port) {
+    waterbag::PlcConfig config;
+    config.backend = "modbus_tcp";
+    config.ack_timeout = waterbag::Milliseconds{200};
+    config.presence_message_timeout = waterbag::Milliseconds{200};
+    config.max_retries = 0;
+    config.modbus_tcp.host = "127.0.0.1";
+    config.modbus_tcp.port = port;
+    config.modbus_tcp.connect_timeout = waterbag::Milliseconds{100};
+    config.modbus_tcp.read_timeout = waterbag::Milliseconds{100};
+    config.modbus_tcp.write_timeout = waterbag::Milliseconds{100};
+    config.modbus_tcp.ack_timeout = waterbag::Milliseconds{200};
+    config.modbus_tcp.ack_poll_interval = waterbag::Milliseconds{1};
+    return config;
+}
+
+void test_modbus_tcp_presence_false() {
+    FakeModbusTcpServer server;
+    server.set_presence(false);
+    server.set_message_id(7);
+
+    waterbag::ModbusTcpPlcController plc(make_modbus_test_config(server.port()));
+    waterbag::CameraConfig camera{1, "A-camera", "camera1"};
+    auto packet = waterbag::make_synthetic_frame_packet(camera, "plc_presence_camera1");
+
+    const auto presence = plc.read_laser_presence(packet);
+    assert(!presence.bag_present);
+    assert(presence.message_valid);
+    assert(presence.message_id == "modbus-7");
+    assert(presence.detail == "modbus_tcp_laser_clear");
+}
+
+void test_modbus_tcp_presence_bag_id_and_commands() {
+    FakeModbusTcpServer server;
+    server.set_presence(true);
+    server.set_message_id(42);
+    server.set_bag_id(1234);
+
+    waterbag::ModbusTcpPlcController plc(make_modbus_test_config(server.port()));
+    waterbag::CameraConfig camera{1, "A-camera", "camera1"};
+    auto packet = waterbag::make_synthetic_frame_packet(camera, "plc_presence_camera1");
+
+    const auto presence = plc.read_laser_presence(packet);
+    assert(presence.bag_present);
+    assert(presence.message_valid);
+    assert(presence.bag_id == "1234");
+    const auto duplicate = plc.read_laser_presence(packet);
+    assert(!duplicate.bag_present);
+    assert(duplicate.detail == "modbus_tcp_duplicate_presence_ignored");
+
+    packet.bag_id = presence.bag_id;
+    auto session = waterbag::make_capture_session(packet);
+    const auto plan = waterbag::make_production_burst_plan();
+    const auto burst_ack = plc.start_light_burst(session, plan);
+    assert(burst_ack.success);
+    assert(burst_ack.detail == "modbus_tcp_ack_success");
+    assert(server.holding_register(1) == 0);
+    assert(server.holding_register(2) == 1234);
+    assert(server.holding_register(6) == 3);
+    assert(server.holding_register(20) == 1);
+    assert(server.holding_register(21) == 100);
+    assert(plc.read_burst_events(session.capture_session_id).size() == plan.frames.size());
+
+    const auto station_feedbacks = plc.release_station_after_capture(session);
+    assert(station_feedbacks.size() == 4);
+    for (const auto& feedback : station_feedbacks) {
+        assert(feedback.success);
+        assert(feedback.detail == "modbus_tcp_ack_success");
+    }
+
+    const auto ok_feedback = plc.route_to_ok_bin(packet);
+    assert(ok_feedback.success);
+    assert(server.holding_register(5) == 20);
+    const auto ng_feedback = plc.route_to_ng_bin(packet);
+    assert(ng_feedback.success);
+    assert(server.holding_register(5) == 21);
+}
+
+void test_modbus_tcp_hardware_check() {
+    FakeModbusTcpServer server;
+    server.set_presence(true);
+    server.set_message_id(88);
+
+    waterbag::ModbusTcpPlcController plc(make_modbus_test_config(server.port()));
+    const auto result = plc.check_hardware();
+    assert(result.success);
+    assert(!result.details.empty());
+}
+
 void test_config_loads_presence_settings() {
     const auto config = waterbag::load_app_config("config/cpp_backend/demo.ini");
+    assert(config.runtime.input_mode == "watch_dir");
+    assert(config.runtime.camera_backend == "mock");
+    assert(config.runtime.plc_backend == "mock");
     assert(config.detection.presence_enabled);
     assert(config.detection.advance_on_presence);
     assert(config.detection.advance_trigger_camera_id == 0);
@@ -363,6 +682,20 @@ void test_config_loads_presence_settings() {
     assert(config.runtime.cameras.size() == 2);
 }
 
+void test_config_loads_hardware_modbus_settings() {
+    const auto config = waterbag::load_app_config("config/cpp_backend/hardware_hik_mvs_modbus.ini");
+    assert(config.runtime.input_mode == "plc_presence");
+    assert(!config.runtime.publish_no_bag_results);
+    assert(config.camera_driver.backend == "hikvision_mvs");
+    assert(config.plc.backend == "modbus_tcp");
+    assert(config.plc.modbus_tcp.host == "192.168.1.50");
+    assert(config.plc.modbus_tcp.port == 502);
+    assert(config.plc.modbus_tcp.coil_start_burst == 0);
+    assert(config.plc.modbus_tcp.holding_register_burst_frame_count == 6);
+    assert(config.runtime.camera_backend == "hikvision_mvs");
+    assert(config.runtime.plc_backend == "modbus_tcp");
+}
+
 }  // namespace
 
 int main() {
@@ -377,6 +710,10 @@ int main() {
     test_defect_detection_fuses_multi_light_burst_inputs();
     test_bag_capture_assembler_waits_for_six_images();
     test_sort_reorder_buffer_releases_results_by_bag_order();
+    test_modbus_tcp_presence_false();
+    test_modbus_tcp_presence_bag_id_and_commands();
+    test_modbus_tcp_hardware_check();
     test_config_loads_presence_settings();
+    test_config_loads_hardware_modbus_settings();
     return 0;
 }

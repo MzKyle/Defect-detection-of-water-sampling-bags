@@ -55,6 +55,7 @@ add_library(mock_camera_driver
 add_library(PLC_driver
     PLC_driver/src/plc.cpp
     PLC_driver/src/plc_controller.cpp
+    PLC_driver/src/modbus_tcp_plc_controller.cpp
 )
 
 add_library(detect_orchestrator

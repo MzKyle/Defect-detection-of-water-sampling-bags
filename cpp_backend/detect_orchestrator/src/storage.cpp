@@ -247,14 +247,23 @@ std::string inspection_result_to_json(const InspectionResult& result) {
     write_string(out, "bag_id", result.frame_packet.bag_id);
     out << "\"camera_id\":" << result.frame_packet.camera_id << ",";
     write_string(out, "camera_name", result.frame_packet.camera_name);
+    write_string(out, "camera_backend", metadata_value(result.frame_packet, "camera.backend"));
+    write_string(out, "plc_backend", metadata_value(result.frame_packet, "plc.backend"));
     write_string(out, "source_path", result.frame_packet.source_path.string());
-    write_bool(out, "bag_present", result.presence_result.is_defect());
+    write_bool(
+        out,
+        "bag_present",
+        result.presence_result.is_defect() || metadata_value(result.frame_packet, "presence.bag_present") == "true");
     write_number(out, "presence_ms", result.timing.presence_inference_ms);
     write_string(out, "presence_source", metadata_value(result.frame_packet, "presence.source"));
     write_string(out, "presence_message_id", metadata_value(result.frame_packet, "presence.message_id"));
+    write_string(out, "plc_message_id", metadata_value(result.frame_packet, "presence.message_id"));
+    write_string(out, "plc_bag_id", metadata_value(result.frame_packet, "presence.bag_id"));
     write_string(out, "presence_detail", metadata_value(result.frame_packet, "presence.detail"));
     write_bool(out, "presence_message_valid", metadata_value(result.frame_packet, "presence.message_valid", "true") == "true");
     write_bool(out, "presence_timed_out", metadata_value(result.frame_packet, "presence.timed_out") == "true");
+    write_bool(out, "burst_sync_valid", metadata_value(result.frame_packet, "burst.sync_valid") == "true");
+    write_string(out, "hardware_check_status", metadata_value(result.frame_packet, "hardware_check.status"));
     write_string(out, "status", status_from_action(result.decision_result.control_action, result.decision_result.timed_out));
     write_string(out, "action", result.decision_result.control_action);
     write_string(out, "reason", result.decision_result.reason);

@@ -1,17 +1,17 @@
 # Waterbag Inspection
 
-> 面向水样检测袋的缺陷检测的工业视觉项目
+> 面向水样检测袋缺陷检测的工程评审型研究 demo
 >
-> C++ 实时后端 / 多光源 burst / PLC 顺序分拣 / Python 观测层
+> 海康 MVS / Modbus TCP PLC-IO / C++ 实时后端 / 多光源 burst / Python 观测层
 
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)](cpp_backend/README.md)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-A42E2B.svg)](LICENSE)
 
 
 
-Waterbag Inspection 把实时采图、光源时序、PLC 交互、袋级组包、缺陷检测、顺序分拣和结果追溯串成一套可运行、可测试、可观测的系统。
+Waterbag Inspection 把真实相机、PLC/IO、多光源 burst、袋级组包、缺陷检测、顺序分拣和结果追溯串成一条可复现的 C++ 硬件链路。
 
-实时执行流程放在 C++ 后端，Python 保留给训练、导出、看板和离线观测。当前开源默认使用 mock 相机和 mock PLC 跑通全链路；生产接入时主要替换 `camera_driver` 和 `PLC_driver` 的底层适配器，主流程、数据结构、线程模型和结果落盘方式保持不变。
+主路径是海康 MVS 相机 + Modbus TCP PLC/IO + C++ 服务 + JSONL + SQLite + Dashboard。mock 相机和 mock PLC 只保留给 CI、无硬件开发和回归测试；真实硬件复现不要求先接入真实缺陷模型，可以用 mock detector 验证采图、触发、ack、分拣和结果追溯闭环。
 
 ## 项目背景
 
@@ -118,9 +118,28 @@ PLC 激光 presence gate
 - 文档：从架构、配置、运行到模型工具都有详细讲解。
 - demo 数据：可直接用于本地复现和烟测。
 
-## 快速开始
+## 硬件复现
 
-最短路径先跑 mock 链路：
+真实硬件链路：
+
+```bash
+make build-cpp
+make hardware-check
+make run-hardware-watch
+```
+
+另一个终端启动看板：
+
+```bash
+python -m waterbag_inspection sync-results --config config/cpp_backend/hardware_hik_mvs_modbus.ini
+python -m waterbag_inspection serve --config config/cpp_backend/hardware_hik_mvs_modbus.ini
+```
+
+硬件配置样例在 `config/cpp_backend/hardware_hik_mvs_modbus.ini`，Modbus register map 和接线/排障说明见 [硬件在环复现](docs/hardware/README.md)。
+
+## Mock 回归
+
+无硬件环境可以跑 mock 链路：
 
 ```bash
 make build-cpp
@@ -130,7 +149,7 @@ make sync-results
 make serve-dashboard
 ```
 
-如果你更喜欢手动命令，也可以直接用 CMake 和 Python：
+手动命令：
 
 ```bash
 cmake -S cpp_backend -B build/cpp_backend
@@ -145,8 +164,9 @@ python -m waterbag_inspection serve --config config/cpp_backend/demo.ini
 
 ## 核心特性
 
-- 默认 mock 相机和 mock PLC，方便先编译、测试、复现流程。
-- C++ 是唯一实时链路（高效快速，也方便后续继续做优化），避免 Python Web 和产线控制互相干扰。
+- C++ 是唯一实时链路，避免 Python Web 和产线控制互相干扰。
+- 真实硬件主路径支持海康 MVS burst 采图和 Modbus TCP PLC/IO 控制。
+- mock 相机和 mock PLC 用于 CI、无硬件开发和回归测试。
 - PLC 激光 presence 负责有无袋判断，减少空背景采图和无效推理。
 - 两阶段检测把整图粗检和微缺陷补检拆开，适合水样袋这种低对比度场景，并提高效率和准确度。
 - 袋级状态机和顺序分拣按物理 BagID 组织，避免并发推理乱序打错袋。
@@ -160,11 +180,11 @@ python -m waterbag_inspection serve --config config/cpp_backend/demo.ini
 1. [工程文档总览](docs/README.md)
 2. [整体架构](docs/architecture/README.md)
 3. [C++ 后端](cpp_backend/README.md)
-4. [配置说明](docs/configuration/README.md)
-5. [运行与验证](docs/operations/README.md)
-6. [模型工具](docs/model-tools/README.md)
-7. [前端与数据库](docs/frontend/README.md)
-8. [清理边界说明](docs/cleanup/README.md)
+4. [硬件在环复现](docs/hardware/README.md)
+5. [配置说明](docs/configuration/README.md)
+6. [运行与验证](docs/operations/README.md)
+7. [模型工具](docs/model-tools/README.md)
+8. [前端与数据库](docs/frontend/README.md)
 
 ## 仓库结构
 

@@ -65,7 +65,7 @@ detect_orchestrator
   -> PLC_driver
 ```
 
-`MockCameraBurstCapture` 已放在独立的 `mock_camera_driver` 包中，用于本地复现流程；`camera_driver` 包保留真实海康 MVS 相机实现。生产接入时应保留接口和数据结构，继续把 `MockPlcTransport` 替换为 Modbus/TCP、Modbus/RTU、EtherCAT、高速 IO 卡或现场 PLC SDK。
+`MockCameraBurstCapture` 已放在独立的 `mock_camera_driver` 包中，用于本地回归；`camera_driver` 包保留真实海康 MVS 相机实现。PLC 侧已有 `modbus_tcp` 后端作为硬件 demo 主路径，现场也可以继续按同一 `IPlcController` 接口替换为 Modbus/RTU、EtherCAT、高速 IO 卡或厂商 PLC SDK。
 
 ## 传感链路
 

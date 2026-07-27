@@ -243,6 +243,7 @@ InspectionResult InspectionPipeline::process_station_packet(FramePacket packet) 
     result.presence_result.stage_name = "presence";
     result.presence_result.detector_backend = "plc_laser";
     result.presence_result.triggered = detection_config_.presence_enabled;
+    packet.metadata["plc.backend"] = plc_controller_->backend_name();
     if (detection_config_.presence_enabled) {
         result.state_trace.push_back("plc_laser_presence_waiting");
         const auto presence = plc_controller_->read_laser_presence(packet);
@@ -254,6 +255,7 @@ InspectionResult InspectionPipeline::process_station_packet(FramePacket packet) 
         packet.metadata["presence.message_valid"] = presence.message_valid ? "true" : "false";
         packet.metadata["presence.timed_out"] = presence.timed_out ? "true" : "false";
         packet.metadata["presence.bag_present"] = presence.bag_present ? "true" : "false";
+        packet.metadata["presence.bag_id"] = presence.bag_id;
         if (!presence.bag_id.empty()) {
             packet.bag_id = presence.bag_id;
             packet.metadata["bag.id"] = presence.bag_id;

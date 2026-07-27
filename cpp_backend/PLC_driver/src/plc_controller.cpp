@@ -50,6 +50,14 @@ MockSemanticPlcController::MockSemanticPlcController(PlcConfig config)
     : config_(config),
       reliable_(config, std::make_unique<MockPlcTransport>(config)) {}
 
+std::string MockSemanticPlcController::backend_name() const {
+    return "mock";
+}
+
+HardwareCheckResult MockSemanticPlcController::check_hardware() {
+    return HardwareCheckResult{true, {"mock_plc_controller_ready"}};
+}
+
 PlcLaserPresence MockSemanticPlcController::read_laser_presence(const FramePacket& packet) {
     const auto started = Clock::now();
     if (config_.mock_presence_latency.count() > 0) {

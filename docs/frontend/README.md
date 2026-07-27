@@ -74,6 +74,8 @@ python -m waterbag_inspection sync-results --config config/cpp_backend/demo.ini
 | `frame_id` | C++ | 单次结果 ID，唯一 |
 | `bag_id` | C++ | 袋体业务主键 |
 | `camera_id` / `camera_name` | C++ 配置 | 相机位置 |
+| `camera_backend` / `plc_backend` | C++ 配置 | 当前结果来自 mock、hikvision_mvs 或 modbus_tcp |
+| `plc_message_id` / `plc_bag_id` | PLC presence | PLC 消息序号和 PLC 提供的 BagID |
 | `source_path` | C++ | 原图或 burst 图路径 |
 | `status_code` / `status` | C++ + Python 映射 | `ok`、`defect`、`timeout`、`captured`、`no_bag` 等 |
 | `decision_action` | C++ | `accept`、`reject`、`await_peer_camera`、`defect_queued` 等 |
@@ -87,6 +89,8 @@ python -m waterbag_inspection sync-results --config config/cpp_backend/demo.ini
 | `advance_control_ms` | C++ | 工位放行动作耗时 |
 | `stage1_ms` / `stage2_ms` | C++ | 模型推理耗时 |
 | `control_ms` | C++ | 末端分拣动作耗时 |
+| `burst_sync_valid` | C++ | burst 图像和 PLC/触发计划是否通过同步校验 |
+| `hardware_check_status` | C++ | 硬件预检结果标记，普通检测结果通常为空 |
 | `final_boxes` | C++ | 最终缺陷框 JSON |
 | `control_commands` | C++ | 计划执行的控制命令 |
 | `execution_feedbacks` | C++ | PLC 执行反馈 |

@@ -1,6 +1,6 @@
 # 水样袋缺陷检测 C++ 实时后端
 
-本目录是水样袋缺陷检测项目中对实时性要求较高链路的 C++ 实现，主要覆盖相机接入、多光源 burst 采图、PLC 动作控制、状态编排和异步缺陷推理。
+本目录是水样袋缺陷检测项目中对实时性要求较高链路的 C++ 实现，主要覆盖海康 MVS 相机接入、多光源 burst 采图、Modbus TCP PLC/IO 动作控制、状态编排和异步缺陷推理。
 
 ```text
 工位线程：相机输入 -> PLC 激光到位消息 -> burst 抓拍锁存 -> PLC 拨杆动作 -> BagID 样本组装
@@ -33,7 +33,7 @@ Python 仍用于模型训练、数据标注、Web 看板、回放工具和 Demo�
 | --- | --- |
 | `camera_driver/` | 海康 MVS 工业相机真实驱动、多光源 burst 采图和图像组包 |
 | `mock_camera_driver/` | 本地 demo/tests 使用的相机 Mock 包 |
-| `PLC_driver/` | PLC 激光到位消息、光源切换事件、拨杆动作和末端分拣动作 |
+| `PLC_driver/` | PLC 激光到位消息、Modbus TCP 后端、光源切换事件、拨杆动作和末端分拣动作 |
 | `detect_orchestrator/` | 主流程编排、PLC presence gate、异步缺陷 worker 池、结果融合 |
 | `detect_orchestrator/include/detect_orchestrator/schemas.hpp` | 跨模块共享的数据结构 |
 | `detector.*` | 检测器接口、Mock 后端、ONNX Runtime CUDA 接入 |
@@ -120,7 +120,7 @@ PLC 激光消息 present=true  -> arm burst，采图并放行工位
 PLC presence 消息超时      -> status=timeout，reason=plc_laser_presence_timeout
 ```
 
-生产适配器应在 `PLC_driver` 中把现场 PLC 发来的到位位、消息序号和可选 BagID 解码为 `PlcLaserPresence`。如果 PLC 已经生成递增 BagID，可以填入 `PlcLaserPresence::bag_id`，主流程会用它覆盖文件名推导出的 `bag_id`。开源 `MockSemanticPlcController` 会优先读取 `FramePacket.metadata["plc.laser_present"]`，没有该字段时用文件名中的 `empty` / `no_bag` / `background` 来模拟无袋。
+真实硬件 demo 使用 `ModbusTcpPlcController` 把现场 PLC 发来的到位位、消息序号和可选 BagID 解码为 `PlcLaserPresence`。如果 PLC 已经生成递增 BagID，可以填入 `PlcLaserPresence::bag_id`，主流程会用它覆盖文件名推导出的 `bag_id`。开源 `MockSemanticPlcController` 仅用于 CI 和无硬件回归，会优先读取 `FramePacket.metadata["plc.laser_present"]`，没有该字段时用文件名中的 `empty` / `no_bag` / `background` 来模拟无袋。
 
 ## 多光源 Burst 推理
 
@@ -180,6 +180,13 @@ sort_result_timeout_ms = 1500
 
 ```bash
 ./build/cpp_backend/waterbag_cpp_service --config config/cpp_backend/demo.ini --watch --defect-workers 4
+```
+
+真实硬件链路使用硬件配置和 PLC presence 输入模式：
+
+```bash
+./build/cpp_backend/waterbag_cpp_service --config config/cpp_backend/hardware_hik_mvs_modbus.ini --check-hardware
+./build/cpp_backend/waterbag_cpp_service --config config/cpp_backend/hardware_hik_mvs_modbus.ini --watch
 ```
 
 如果主推理后端跑单 GPU，`defect_worker_count = 4` 不一定更快，可能因为 GPU 上下文、显存拷贝和 host/device 同步导致 P99 延迟更差。现场建议从 1 或 2 开始压测，再按吞吐、P95/P99 和 PLC 分拣窗口调整。末端分拣 PLC 已经由 sorter 线程执行，不会再占用 defect worker。

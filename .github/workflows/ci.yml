@@ -21,6 +21,9 @@ jobs:
       - name: Run C++ tests
         run: ctest --test-dir build/cpp_backend --output-on-failure
 
+      - name: Smoke hardware check entrypoint
+        run: ./build/cpp_backend/waterbag_cpp_service --config config/cpp_backend/demo.ini --check-hardware
+
       - name: Check Python dashboard and tools
         run: python -m compileall waterbag_inspection train_ultralytics.py train_v8.py train_yolo11.py benchmark_ultralytics_models.py export_ultralytics_onnx.py
 

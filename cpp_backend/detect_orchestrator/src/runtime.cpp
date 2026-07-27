@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <functional>
+#include <stdexcept>
 
 #include "detect_orchestrator/logger.hpp"
 
@@ -52,8 +53,14 @@ void RealtimeRuntime::start() {
         sort_queue_.clear();
     }
 
-    for (const auto& camera : config_.cameras) {
-        std::filesystem::create_directories(camera.watch_dir);
+    if (config_.input_mode != "watch_dir" && config_.input_mode != "plc_presence") {
+        throw std::runtime_error("unsupported runtime.input_mode: " + config_.input_mode);
+    }
+
+    if (config_.input_mode == "watch_dir") {
+        for (const auto& camera : config_.cameras) {
+            std::filesystem::create_directories(camera.watch_dir);
+        }
     }
 
     const auto worker_count = std::max<std::size_t>(1, config_.defect_worker_count);
@@ -118,7 +125,12 @@ void RealtimeRuntime::submit_path(int camera_id, const std::filesystem::path& pa
 
     auto packet = make_frame_packet(*camera, path);
     packet.source = "runtime";
+    packet.metadata["camera.backend"] = config_.camera_backend;
+    packet.metadata["plc.backend"] = config_.plc_backend;
+    submit_packet(std::move(packet));
+}
 
+void RealtimeRuntime::submit_packet(FramePacket packet) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (queue_.size() >= config_.queue_capacity) {
@@ -166,22 +178,34 @@ void RealtimeRuntime::poll_loop() {
             }
         }
 
-        for (const auto& camera : config_.cameras) {
-            if (!std::filesystem::exists(camera.watch_dir)) {
-                continue;
+        if (config_.input_mode == "plc_presence") {
+            for (const auto& camera : config_.cameras) {
+                auto packet = make_synthetic_frame_packet(
+                    camera,
+                    "plc_presence_camera" + std::to_string(camera.id));
+                packet.source = "plc_presence_poll";
+                packet.metadata["camera.backend"] = config_.camera_backend;
+                packet.metadata["plc.backend"] = config_.plc_backend;
+                submit_packet(std::move(packet));
             }
-            for (const auto& entry : std::filesystem::directory_iterator(camera.watch_dir)) {
-                if (!entry.is_regular_file() || !should_accept_extension(entry.path())) {
+        } else {
+            for (const auto& camera : config_.cameras) {
+                if (!std::filesystem::exists(camera.watch_dir)) {
                     continue;
                 }
-                const auto path_key = entry.path().string();
-                bool is_new = false;
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    is_new = seen_paths_.insert(path_key).second;
-                }
-                if (is_new) {
-                    submit_path(camera.id, entry.path());
+                for (const auto& entry : std::filesystem::directory_iterator(camera.watch_dir)) {
+                    if (!entry.is_regular_file() || !should_accept_extension(entry.path())) {
+                        continue;
+                    }
+                    const auto path_key = entry.path().string();
+                    bool is_new = false;
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        is_new = seen_paths_.insert(path_key).second;
+                    }
+                    if (is_new) {
+                        submit_path(camera.id, entry.path());
+                    }
                 }
             }
         }
@@ -212,11 +236,14 @@ void RealtimeRuntime::worker_loop() {
             continue;
         }
 
-        if (!wait_until_ready(packet.source_path)) {
+        const bool synthetic_presence_packet = packet.source == "plc_presence_poll";
+        if (!synthetic_presence_packet && !wait_until_ready(packet.source_path)) {
             Logger::instance().warn("skipped unstable image: " + packet.source_path.string());
             continue;
         }
-        packet.source_mtime = std::filesystem::last_write_time(packet.source_path);
+        if (!synthetic_presence_packet && std::filesystem::exists(packet.source_path)) {
+            packet.source_mtime = std::filesystem::last_write_time(packet.source_path);
+        }
 
         const auto now = Clock::now();
         {
@@ -229,7 +256,13 @@ void RealtimeRuntime::worker_loop() {
         }
 
         const auto station_result = pipeline_->process_station_packet(packet);
-        publish(station_result);
+        const bool suppress_no_bag =
+            synthetic_presence_packet &&
+            !config_.publish_no_bag_results &&
+            station_result.decision_result.control_action == "no_bag";
+        if (!suppress_no_bag) {
+            publish(station_result);
+        }
         if (station_result.decision_result.control_action == "defect_queued") {
             for (auto& ready_packet : handle_station_capture(station_result)) {
                 submit_defect_packet(std::move(ready_packet));

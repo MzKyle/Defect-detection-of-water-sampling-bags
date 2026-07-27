@@ -361,6 +361,7 @@
                                 <th>时间</th>
                                 <th>袋体</th>
                                 <th>相机</th>
+                                <th>后端</th>
                                 <th>状态</th>
                                 <th>动作</th>
                                 <th>原因</th>
@@ -464,6 +465,7 @@
                     <td>${escapeHtml(row.timestamp)}</td>
                     <td>${escapeHtml(row.bag_id)}</td>
                     <td>${escapeHtml(row.camera_name)}</td>
+                    <td>${escapeHtml(row.camera_backend || "-")} / ${escapeHtml(row.plc_backend || "-")}</td>
                     <td><span class="${badgeClass(row.status)}">${escapeHtml(row.status)}</span></td>
                     <td>${escapeHtml(row.decision_action)}</td>
                     <td>${escapeHtml(row.decision_reason)}</td>

@@ -2,10 +2,11 @@ CMAKE ?= cmake
 PYTHON ?= python
 BUILD_DIR ?= build/cpp_backend
 CONFIG ?= config/cpp_backend/demo.ini
+HARDWARE_CONFIG ?= config/cpp_backend/hardware_hik_mvs_modbus.ini
 DATA ?= config/waterbag.yaml
 DEVICE ?= 0
 
-.PHONY: configure-cpp build-cpp run-cpp-demo run-cpp-once run-cpp-watch serve-dashboard sync-results test smoke install-train train-yolov8 train-yolo11 benchmark-models export-onnx python-check clean-cpp
+.PHONY: configure-cpp build-cpp run-cpp-demo run-cpp-once run-cpp-watch hardware-check run-hardware-watch serve-dashboard sync-results test smoke install-train train-yolov8 train-yolo11 benchmark-models export-onnx python-check clean-cpp
 
 configure-cpp:
 	$(CMAKE) -S cpp_backend -B $(BUILD_DIR)
@@ -21,6 +22,12 @@ run-cpp-once: build-cpp
 
 run-cpp-watch: build-cpp
 	./$(BUILD_DIR)/waterbag_cpp_service --config $(CONFIG) --watch
+
+hardware-check: build-cpp
+	./$(BUILD_DIR)/waterbag_cpp_service --config $(HARDWARE_CONFIG) --check-hardware
+
+run-hardware-watch: build-cpp
+	./$(BUILD_DIR)/waterbag_cpp_service --config $(HARDWARE_CONFIG) --watch
 
 serve-dashboard:
 	$(PYTHON) -m waterbag_inspection serve --config $(CONFIG)

@@ -63,6 +63,20 @@ FramePacket make_frame_packet(const CameraConfig& camera, const std::filesystem:
     return packet;
 }
 
+FramePacket make_synthetic_frame_packet(const CameraConfig& camera, const std::string& source_name) {
+    FramePacket packet;
+    packet.frame_id = "cam" + std::to_string(camera.id) + "-" + make_hex_id(++g_frame_counter);
+    packet.bag_id = source_name + "-" + make_hex_id(g_frame_counter.load());
+    packet.camera_id = camera.id;
+    packet.camera_name = camera.name;
+    packet.source_path = source_name;
+    packet.source_name = source_name;
+    packet.received_at = SystemClock::now();
+    packet.enqueued_at = packet.received_at;
+    packet.source = "synthetic";
+    return packet;
+}
+
 std::string make_command_id() {
     return "cmd-" + make_hex_id(++g_command_counter);
 }
