@@ -5,8 +5,9 @@
 当前工程边界：
 
 - C++ 负责实时链路：采图、推理、PLC、分拣、JSONL 结果输出。
-- Python 只负责 Web 看板、SQLite 结果库、训练、benchmark 和 ONNX 导出。
-- 不再新增 Python 版实时 pipeline、PLC/mock 控制、回放或故障注入实现。
+- Python 负责 Web 看板、SQLite 结果库、训练、benchmark、ONNX 导出，以及无硬件 demo 上传投料辅助。
+- 不再新增 Python 版实时 pipeline、相机 SDK 控制、PLC/Modbus/mock 控制、burst 编排、分拣、回放或故障注入实现。
+- Dashboard 上传入口只能把手动样本复制到 C++ `watch_dir`；后续检测、状态机和分拣必须由 C++ 服务完成。
 
 ## 本地验证
 
@@ -21,7 +22,7 @@ ctest --test-dir build/cpp_backend --output-on-failure
 检查 Python 看板和离线工具：
 
 ```bash
-python -m compileall waterbag_inspection train_ultralytics.py train_v8.py train_yolo11.py benchmark_ultralytics_models.py export_ultralytics_onnx.py
+make python-check
 python -m waterbag_inspection sync-results --config config/cpp_backend/demo.ini
 ```
 

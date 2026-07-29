@@ -6,7 +6,7 @@ HARDWARE_CONFIG ?= config/cpp_backend/hardware_hik_mvs_modbus.ini
 DATA ?= config/waterbag.yaml
 DEVICE ?= 0
 
-.PHONY: configure-cpp build-cpp run-cpp-demo run-cpp-once run-cpp-watch hardware-check run-hardware-watch serve-dashboard sync-results test smoke install-train train-yolov8 train-yolo11 benchmark-models export-onnx python-check clean-cpp
+.PHONY: configure-cpp build-cpp run-cpp-demo run-cpp-once run-cpp-watch hardware-check run-hardware-watch serve-dashboard sync-results test smoke install-train train-yolov8 train-yolo11 benchmark-models export-onnx python-boundary-check dashboard-smoke python-check clean-cpp
 
 configure-cpp:
 	$(CMAKE) -S cpp_backend -B $(BUILD_DIR)
@@ -65,8 +65,16 @@ export-onnx:
 		--dynamic \
 		--simplify
 
+python-boundary-check:
+	$(PYTHON) scripts/check_python_realtime_boundary.py
+
+dashboard-smoke:
+	$(PYTHON) scripts/smoke_dashboard.py --config $(CONFIG)
+
 python-check:
 	$(PYTHON) -m compileall waterbag_inspection train_ultralytics.py train_v8.py train_yolo11.py benchmark_ultralytics_models.py export_ultralytics_onnx.py predict_twostage_multilight.py benchmark_twostage_multilight.py
+	$(PYTHON) scripts/check_python_realtime_boundary.py
+	$(PYTHON) scripts/smoke_dashboard.py --config $(CONFIG)
 
 clean-cpp:
 	$(CMAKE) -E rm -rf $(BUILD_DIR)

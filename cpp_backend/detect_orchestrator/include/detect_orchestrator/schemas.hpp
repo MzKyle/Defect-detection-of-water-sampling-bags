@@ -157,6 +157,7 @@ struct FramePacket {
     std::string source_name;
     SystemClock::time_point received_at = SystemClock::now();
     SystemClock::time_point enqueued_at = SystemClock::now();
+    std::optional<SystemClock::time_point> bag_first_seen_at;
     std::optional<std::filesystem::file_time_type> source_mtime;
     bool replayed = false;
     std::string source = "runtime";
@@ -239,12 +240,16 @@ struct BagSummary {
 struct TimingBreakdown {
     double queue_delay_ms = 0.0;
     double presence_inference_ms = 0.0;
+    double capture_ms = 0.0;
     double advance_control_ms = 0.0;
+    double bag_pairing_ms = 0.0;
     double stage1_inference_ms = 0.0;
     double stage2_inference_ms = 0.0;
     double decision_ms = 0.0;
     double correlation_ms = 0.0;
+    double reorder_wait_ms = 0.0;
     double control_ms = 0.0;
+    double bag_latency_ms = 0.0;
     double total_ms = 0.0;
 };
 

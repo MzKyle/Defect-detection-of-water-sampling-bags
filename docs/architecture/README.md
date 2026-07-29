@@ -1,6 +1,6 @@
 # 当前架构
 
-本项目采用“实时执行”和“观测离线”分层。实时链路放在 C++，因为它要面对相机触发、PLC ack、机械节拍、线程调度和 fail-safe 分拣。Python 保留在更适合它的位置：训练、导出、看板和数据查询。
+本项目采用“实时执行”和“观测离线”分层。实时链路放在 C++，因为它要面对相机触发、PLC ack、机械节拍、线程调度和 fail-safe 分拣。Python 保留在更适合它的位置：训练、导出、看板、数据查询和无硬件 demo 投料辅助。
 
 ## 总体分层
 
@@ -223,4 +223,4 @@ C++ 输出 `InspectionResult` JSONL。每行包括：
 - `control_commands`、`execution_feedbacks`、`ack_attempts`、`ack_retry`
 - `boxes`、`state_trace`
 
-Python 看板只读取这些结果，不重新执行检测或控制 PLC。它的价值是提供公开友好的观测入口：最近结果、统计指标、异常信号、原图查看和 JSONL 同步状态。
+Python 看板不重新执行检测或控制 PLC。它的价值是提供公开友好的观测入口：最近结果、统计指标、异常信号、原图查看和 JSONL 同步状态；唯一写入例外是 demo 上传入口把手动样本复制到 C++ `watch_dir`，后续处理仍由 C++ 服务完成。

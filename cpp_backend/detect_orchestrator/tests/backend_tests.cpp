@@ -428,6 +428,10 @@ void test_jsonl_storage_contains_presence_fields() {
     assert(line.find("\"presence_source\":\"plc_laser\"") != std::string::npos);
     assert(line.find("\"presence_message_valid\":true") != std::string::npos);
     assert(line.find("\"advance_control_ms\"") != std::string::npos);
+    assert(line.find("\"capture_ms\"") != std::string::npos);
+    assert(line.find("\"decision_ms\"") != std::string::npos);
+    assert(line.find("\"correlation_ms\"") != std::string::npos);
+    assert(line.find("\"bag_latency_ms\"") != std::string::npos);
     assert(line.find("\"control_commands\"") != std::string::npos);
     assert(line.find("push_bag_after_capture") != std::string::npos);
     assert(line.find("burst_alignment") != std::string::npos);

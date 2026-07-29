@@ -6,72 +6,119 @@
     <title>{{ app_name }}</title>
     <style>
         :root {
-            --bg: #f7f8f5;
-            --surface: #ffffff;
-            --surface-soft: #f1f4ee;
-            --ink: #1d2521;
-            --muted: #66716b;
-            --line: #dfe5dd;
-            --accent: #0f766e;
-            --warn: #b5472f;
-            --ok: #2f7d46;
-            --pending: #986d1f;
+            --bg: #141716;
+            --surface: #1b1f1f;
+            --surface-2: #202626;
+            --surface-3: #252c2c;
+            --line: #343c3c;
+            --line-soft: #2a3131;
+            --text: #e8ecea;
+            --muted: #9ea7a4;
+            --muted-2: #74807d;
+            --accent: #4ba3a1;
+            --accent-soft: rgba(75, 163, 161, .14);
+            --ok: #48b16e;
+            --ok-soft: rgba(72, 177, 110, .13);
+            --danger: #e05f5f;
+            --danger-soft: rgba(224, 95, 95, .13);
+            --warn: #d39b35;
+            --warn-soft: rgba(211, 155, 53, .14);
+            --wait: #858e8b;
+            --wait-soft: rgba(133, 142, 139, .14);
+            --shadow: 0 10px 30px rgba(0, 0, 0, .18);
+            --mono: "SFMono-Regular", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+            --sans: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
         }
 
         * { box-sizing: border-box; }
 
+        html,
         body {
-            margin: 0;
-            min-height: 100vh;
-            color: var(--ink);
-            background: var(--bg);
-            font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            min-height: 100%;
         }
 
-        button, select, input { font: inherit; }
+        body {
+            margin: 0;
+            color: var(--text);
+            background: var(--bg);
+            font-family: var(--sans);
+            font-size: 13px;
+            letter-spacing: 0;
+        }
+
+        button,
+        select,
+        input {
+            font: inherit;
+        }
+
+        button {
+            color: inherit;
+        }
 
         .shell {
             display: grid;
-            gap: 16px;
-            padding: 20px;
+            gap: 12px;
+            min-width: 1180px;
+            padding: 14px;
         }
 
         .topbar,
-        .toolbar,
-        .panel {
+        .panel,
+        .metric-strip,
+        .drawer {
             background: var(--surface);
             border: 1px solid var(--line);
             border-radius: 8px;
         }
 
         .topbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-            padding: 14px 16px;
-        }
-
-        .title {
             display: grid;
-            gap: 4px;
+            grid-template-columns: minmax(340px, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
         }
 
-        h1, h2 {
+        .brand {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        h1,
+        h2,
+        h3,
+        p {
             margin: 0;
-            letter-spacing: 0;
         }
 
-        h1 { font-size: 21px; }
-        h2 { font-size: 16px; }
+        h1 {
+            font-size: 18px;
+            font-weight: 680;
+        }
 
-        .subtle {
+        h2 {
+            font-size: 14px;
+            font-weight: 650;
+        }
+
+        h3 {
+            font-size: 12px;
+            font-weight: 650;
             color: var(--muted);
-            font-size: 13px;
-            overflow-wrap: anywhere;
         }
 
-        .actions {
+        .config-line {
+            color: var(--muted-2);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .actions,
+        .inline {
             display: flex;
             align-items: center;
             gap: 8px;
@@ -79,313 +126,744 @@
         }
 
         .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 32px;
             border: 1px solid var(--line);
             border-radius: 6px;
-            padding: 9px 12px;
-            background: var(--surface);
-            color: var(--ink);
+            padding: 6px 10px;
+            background: var(--surface-2);
+            color: var(--text);
             cursor: pointer;
-            min-height: 38px;
+        }
+
+        .btn:hover {
+            border-color: #465151;
+            background: var(--surface-3);
         }
 
         .btn.primary {
-            border-color: var(--accent);
-            background: var(--accent);
-            color: #fff;
+            border-color: rgba(75, 163, 161, .65);
+            background: var(--accent-soft);
+            color: #dff7f5;
         }
 
-        .pill {
+        .btn.icon {
+            width: 32px;
+            padding: 0;
+        }
+
+        .chip,
+        .status-chip {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 5px 9px;
-            border-radius: 999px;
+            min-height: 24px;
             border: 1px solid var(--line);
-            background: var(--surface-soft);
-            font-size: 12px;
-            font-weight: 600;
+            border-radius: 999px;
+            padding: 3px 8px;
+            color: var(--muted);
+            background: var(--surface-2);
             white-space: nowrap;
         }
 
-        .pill.ok { color: var(--ok); background: #eef8f0; border-color: #cae8d0; }
-        .pill.warn { color: var(--warn); background: #fff0eb; border-color: #f1c7ba; }
-        .pill.pending { color: var(--pending); background: #fff7e7; border-color: #efd59b; }
+        .status-chip.ok {
+            color: #a9e7bd;
+            border-color: rgba(72, 177, 110, .34);
+            background: var(--ok-soft);
+        }
 
-        .toolbar {
+        .status-chip.danger {
+            color: #ffb7b7;
+            border-color: rgba(224, 95, 95, .34);
+            background: var(--danger-soft);
+        }
+
+        .status-chip.warn {
+            color: #f2d08a;
+            border-color: rgba(211, 155, 53, .38);
+            background: var(--warn-soft);
+        }
+
+        .status-chip.wait,
+        .status-chip.neutral {
+            color: #c3c9c7;
+            border-color: rgba(133, 142, 139, .32);
+            background: var(--wait-soft);
+        }
+
+        .mono,
+        .value,
+        td.time,
+        td.num {
+            font-family: var(--mono);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .metric-strip {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 12px;
-            padding: 12px;
-        }
-
-        .field {
-            display: grid;
-            gap: 6px;
-        }
-
-        label {
-            color: var(--muted);
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        select,
-        input[type="file"] {
-            width: 100%;
-            min-height: 38px;
-            border: 1px solid var(--line);
-            border-radius: 6px;
-            background: #fff;
-            padding: 8px 10px;
-        }
-
-        .metrics {
-            display: grid;
-            grid-template-columns: repeat(6, minmax(0, 1fr));
-            gap: 10px;
+            grid-template-columns: repeat(8, minmax(120px, 1fr));
+            overflow: hidden;
         }
 
         .metric {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            padding: 12px;
-            min-height: 82px;
+            display: grid;
+            gap: 3px;
+            min-height: 56px;
+            padding: 9px 12px;
+            border-right: 1px solid var(--line-soft);
+        }
+
+        .metric:last-child {
+            border-right: 0;
         }
 
         .metric-label {
-            color: var(--muted);
-            font-size: 12px;
-            font-weight: 600;
+            color: var(--muted-2);
+            font-size: 11px;
         }
 
         .metric-value {
-            margin-top: 8px;
-            font-size: 24px;
+            font-family: var(--mono);
+            font-size: 18px;
             font-weight: 700;
+            font-variant-numeric: tabular-nums;
         }
 
-        .grid {
+        .focus-grid {
             display: grid;
-            grid-template-columns: 360px minmax(0, 1fr);
-            gap: 16px;
-            align-items: start;
+            grid-template-columns: minmax(760px, 1fr) 356px;
+            gap: 12px;
+            align-items: stretch;
         }
 
         .panel {
-            padding: 14px;
-            display: grid;
+            min-width: 0;
+            padding: 12px;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             gap: 12px;
+            min-height: 30px;
+            margin-bottom: 10px;
         }
 
-        .camera-list {
+        .current-head {
             display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .bag-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .bag-id {
+            font-family: var(--mono);
+            font-size: 20px;
+            font-weight: 760;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 10px;
         }
 
-        .camera {
-            display: grid;
-            gap: 10px;
-            padding: 10px;
+        .vision-pane {
+            min-width: 0;
+            overflow: hidden;
             border: 1px solid var(--line);
             border-radius: 8px;
-            background: var(--surface-soft);
+            background: #111313;
         }
 
-        .camera-head {
+        .vision-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            min-height: 34px;
+            padding: 7px 9px;
+            border-bottom: 1px solid var(--line-soft);
+            background: #191d1d;
+        }
+
+        .vision-head strong {
+            font-size: 13px;
+        }
+
+        .vision-stage {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .image-box {
+            position: relative;
+            aspect-ratio: 4 / 3;
+            background: #0e1010;
+            overflow: hidden;
+        }
+
+        .image-box img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .placeholder {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            color: var(--muted-2);
+            background:
+                linear-gradient(#171b1b 1px, transparent 1px),
+                linear-gradient(90deg, #171b1b 1px, transparent 1px),
+                #101212;
+            background-size: 28px 28px;
+        }
+
+        .box {
+            position: absolute;
+            border: 2px solid var(--danger);
+            border-radius: 3px;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, .55);
+        }
+
+        .box-label {
+            position: absolute;
+            left: -2px;
+            top: -22px;
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 2px 5px;
+            border-radius: 4px 4px 4px 0;
+            background: rgba(224, 95, 95, .92);
+            color: #fff;
+            font-size: 11px;
+            font-family: var(--mono);
+        }
+
+        .rail {
+            display: grid;
+            grid-template-rows: auto auto 1fr auto;
+            gap: 10px;
+        }
+
+        .judgement {
+            display: grid;
+            gap: 8px;
+            padding: 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface-2);
+        }
+
+        .status-large {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        .status-large .icon {
+            font-size: 22px;
+        }
+
+        .status-large .text {
+            font-size: 42px;
+            line-height: .95;
+            font-weight: 780;
+            letter-spacing: 0;
+        }
+
+        .status-large.ok .text { color: var(--ok); }
+        .status-large.danger .text { color: var(--danger); }
+        .status-large.warn .text { color: var(--warn); }
+        .status-large.wait .text,
+        .status-large.neutral .text { color: #c8cfcd; }
+
+        .kv-grid {
+            display: grid;
+            grid-template-columns: 92px minmax(0, 1fr);
+            gap: 7px 10px;
+        }
+
+        .kv-grid dt {
+            color: var(--muted-2);
+        }
+
+        .kv-grid dd {
+            min-width: 0;
+            margin: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .defect-list {
+            display: grid;
+            gap: 6px;
+            padding: 10px;
+            border: 1px solid var(--line-soft);
+            border-radius: 8px;
+            background: #181c1c;
+        }
+
+        .defect-row,
+        .fault-row,
+        .camera-row {
+            display: grid;
+            gap: 4px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--line-soft);
+        }
+
+        .defect-row:last-child,
+        .fault-row:last-child,
+        .camera-row:last-child {
+            border-bottom: 0;
+        }
+
+        .row-line {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 10px;
         }
 
-        .preview {
-            aspect-ratio: 4 / 3;
-            border: 1px solid var(--line);
-            border-radius: 6px;
-            background: #fff;
-            overflow: hidden;
-        }
-
-        .preview img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            display: block;
-        }
-
-        .kv {
-            display: grid;
-            grid-template-columns: 88px minmax(0, 1fr);
-            gap: 6px;
-            font-size: 13px;
-        }
-
-        .kv dt {
+        .muted {
             color: var(--muted);
         }
 
-        .kv dd {
-            margin: 0;
-            overflow-wrap: anywhere;
+        .tiny {
+            color: var(--muted-2);
+            font-size: 11px;
+        }
+
+        .flow {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .flow-step {
+            min-width: 0;
+            padding: 8px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface-2);
+        }
+
+        .step-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .step-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 650;
+        }
+
+        .step-time {
+            color: var(--muted);
+            font-family: var(--mono);
+            font-size: 11px;
+        }
+
+        .step-reason {
+            min-height: 28px;
+            color: var(--muted);
+            font-size: 11px;
+            line-height: 1.3;
+        }
+
+        .lower-grid {
+            display: grid;
+            grid-template-columns: 330px minmax(560px, 1fr) 340px;
+            gap: 12px;
+            align-items: start;
+        }
+
+        .camera-thumb {
+            width: 64px;
+            aspect-ratio: 4 / 3;
+            flex: 0 0 auto;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            object-fit: cover;
+            background: #101212;
+        }
+
+        .camera-main {
+            display: flex;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .camera-main > div {
+            min-width: 0;
+            flex: 1;
         }
 
         .table-wrap {
-            overflow-x: auto;
+            overflow: auto;
+            max-height: 352px;
+            border: 1px solid var(--line-soft);
+            border-radius: 8px;
         }
 
         table {
             width: 100%;
+            min-width: 960px;
             border-collapse: collapse;
-            font-size: 13px;
-            min-width: 980px;
+            font-size: 12px;
         }
 
-        th, td {
-            padding: 10px 8px;
-            border-bottom: 1px solid var(--line);
+        th,
+        td {
+            padding: 8px 9px;
+            border-bottom: 1px solid var(--line-soft);
             text-align: left;
-            vertical-align: top;
+            vertical-align: middle;
         }
 
         th {
-            color: var(--muted);
-            font-size: 12px;
-            font-weight: 700;
-            background: #fafbf8;
             position: sticky;
             top: 0;
+            z-index: 1;
+            color: var(--muted);
+            background: #181d1d;
+            font-size: 11px;
+            font-weight: 680;
+        }
+
+        tbody tr {
+            cursor: pointer;
+        }
+
+        tbody tr:hover,
+        tbody tr.selected {
+            background: #222929;
         }
 
         .signals {
             display: flex;
-            gap: 6px;
             flex-wrap: wrap;
+            gap: 5px;
         }
 
         .empty {
-            color: var(--muted);
-            padding: 16px;
-            text-align: center;
+            display: grid;
+            place-items: center;
+            min-height: 120px;
             border: 1px dashed var(--line);
             border-radius: 8px;
+            color: var(--muted);
         }
 
-        @media (max-width: 1100px) {
-            .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .grid { grid-template-columns: 1fr; }
-            .toolbar { grid-template-columns: 1fr; }
+        details.engineering {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface);
         }
 
-        @media (max-width: 720px) {
-            .shell { padding: 12px; }
-            .topbar { align-items: stretch; flex-direction: column; }
-            .actions { width: 100%; }
-            .btn { flex: 1; }
-            .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        details.engineering summary {
+            cursor: pointer;
+            padding: 8px 10px;
+            color: var(--muted);
+        }
+
+        .tool-grid {
+            display: grid;
+            grid-template-columns: 160px minmax(240px, 1fr) auto;
+            gap: 8px;
+            padding: 0 10px 10px;
+        }
+
+        select,
+        input[type="file"] {
+            width: 100%;
+            min-height: 32px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 5px 8px;
+            background: var(--surface-2);
+            color: var(--text);
+        }
+
+        .drawer {
+            position: fixed;
+            inset: 12px 12px 12px auto;
+            z-index: 20;
+            display: grid;
+            grid-template-rows: auto auto 1fr;
+            width: min(540px, calc(100vw - 24px));
+            padding: 12px;
+            box-shadow: var(--shadow);
+            transform: translateX(calc(100% + 20px));
+            transition: transform .18s ease;
+        }
+
+        .drawer.open {
+            transform: translateX(0);
+        }
+
+        .drawer-body {
+            min-height: 0;
+            overflow: auto;
+            display: grid;
+            gap: 12px;
+            padding-top: 10px;
+        }
+
+        .drawer-section {
+            border: 1px solid var(--line-soft);
+            border-radius: 8px;
+            padding: 10px;
+            background: #181c1c;
+        }
+
+        .drawer-section details {
+            border: 0;
+        }
+
+        .drawer-section summary {
+            cursor: pointer;
+            color: var(--muted);
+        }
+
+        pre {
+            max-height: 280px;
+            overflow: auto;
+            margin: 8px 0 0;
+            padding: 10px;
+            border: 1px solid var(--line-soft);
+            border-radius: 6px;
+            background: #101212;
+            color: #cbd4d1;
+            font: 11px/1.45 var(--mono);
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .fresh-indicator {
+            display: none;
+        }
+
+        .fresh-indicator.show {
+            display: inline-flex;
+        }
+
+        @media (min-width: 1720px) {
+            .shell {
+                padding: 16px 20px;
+                gap: 14px;
+            }
+
+            .focus-grid {
+                grid-template-columns: minmax(980px, 1fr) 390px;
+            }
+
+            .lower-grid {
+                grid-template-columns: 370px minmax(680px, 1fr) 380px;
+            }
+        }
+
+        @media (max-width: 1280px) {
+            .shell {
+                min-width: 0;
+            }
+
+            .focus-grid,
+            .lower-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .metric-strip {
+                grid-template-columns: repeat(4, minmax(120px, 1fr));
+            }
+
+            .flow {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
         }
     </style>
 </head>
 <body>
     <main class="shell">
         <header class="topbar">
-            <div class="title">
-                <h1>{{ app_name }}</h1>
-                <div class="subtle" id="config-line">{{ config_name }}</div>
+            <div class="brand">
+                <h1>水样袋机器视觉质检工作台</h1>
+                <div class="config-line" id="config-line">{{ config_name }}</div>
             </div>
             <div class="actions">
-                <span class="pill" id="jsonl-state">JSONL</span>
-                <button class="btn primary" id="sync-btn" type="button">同步</button>
-                <button class="btn" id="refresh-btn" type="button">刷新</button>
+                <span class="status-chip neutral" id="jsonl-state">JSONL --</span>
+                <span class="chip mono" id="refresh-time">--</span>
+                <button class="btn primary" id="sync-btn" type="button">↻ 同步</button>
+                <button class="btn" id="refresh-btn" type="button">⟳ 刷新</button>
             </div>
         </header>
 
-        <section class="toolbar">
-            <div class="field">
-                <label for="camera-select">相机</label>
-                <select id="camera-select">
+        <details class="engineering">
+            <summary>工程工具</summary>
+            <div class="tool-grid">
+                <select id="camera-select" aria-label="相机">
                     {% for camera in cameras %}
                     <option value="{{ camera.camera_id }}">{{ camera.name }}</option>
                     {% endfor %}
                 </select>
-            </div>
-            <div class="field">
-                <label for="demo-image">图片</label>
-                <input type="file" id="demo-image" accept=".jpg,.jpeg,.png,.bmp">
-            </div>
-            <div class="field">
-                <label>&nbsp;</label>
+                <input type="file" id="demo-image" accept=".jpg,.jpeg,.png,.bmp" aria-label="图片">
                 <button class="btn" id="upload-btn" type="button">复制到 Watch 目录</button>
             </div>
-        </section>
+        </details>
 
-        <section class="metrics">
-            <div class="metric"><div class="metric-label">Recent</div><div class="metric-value" id="recent-count">0</div></div>
-            <div class="metric"><div class="metric-label">Defect</div><div class="metric-value" id="defect-count">0</div></div>
-            <div class="metric"><div class="metric-label">Timeout</div><div class="metric-value" id="timeout-count">0</div></div>
-            <div class="metric"><div class="metric-label">Ack Retry</div><div class="metric-value" id="ack-retry-count">0</div></div>
-            <div class="metric"><div class="metric-label">Avg Latency</div><div class="metric-value" id="avg-latency-ms">0.0</div></div>
-            <div class="metric"><div class="metric-label">Avg Control</div><div class="metric-value" id="avg-control-ms">0.0</div></div>
-        </section>
+        <section class="metric-strip" id="metric-strip"></section>
 
-        <section class="grid">
-            <aside class="panel">
-                <h2>相机状态</h2>
-                <div class="camera-list">
-                    {% for camera in cameras %}
-                    <article class="camera" data-camera-id="{{ camera.camera_id }}">
-                        <div class="camera-head">
-                            <strong>{{ camera.name }}</strong>
-                            <span class="pill pending" id="camera-badge-{{ camera.camera_id }}">无数据</span>
-                        </div>
-                        <div class="preview">
-                            <img id="camera-image-{{ camera.camera_id }}" alt="{{ camera.name }}">
-                        </div>
-                        <dl class="kv">
-                            <dt>状态</dt><dd id="camera-status-{{ camera.camera_id }}">--</dd>
-                            <dt>时间</dt><dd id="camera-time-{{ camera.camera_id }}">--</dd>
-                            <dt>框数</dt><dd id="camera-counts-{{ camera.camera_id }}">0</dd>
-                            <dt>目录</dt><dd>{{ camera.watch_dir }}</dd>
-                        </dl>
-                    </article>
-                    {% endfor %}
+        <section class="focus-grid">
+            <section class="panel">
+                <div class="current-head">
+                    <div class="bag-title">
+                        <h2>当前检测</h2>
+                        <span class="bag-id" id="current-bag-id">--</span>
+                        <span class="status-chip neutral" id="current-status">等待</span>
+                    </div>
+                    <div class="inline">
+                        <span class="chip mono" id="current-updated">--</span>
+                    </div>
+                </div>
+                <div class="image-grid" id="face-grid"></div>
+            </section>
+
+            <aside class="panel rail">
+                <div class="judgement">
+                    <h3>最终判定</h3>
+                    <div class="status-large neutral" id="judgement-large">
+                        <span class="icon">…</span>
+                        <span class="text">等待</span>
+                    </div>
+                    <dl class="kv-grid">
+                        <dt>判定原因</dt><dd id="decision-reason">--</dd>
+                        <dt>PLC 分拣</dt><dd id="sort-state">--</dd>
+                        <dt>总检测延迟</dt><dd class="mono" id="bag-latency">--</dd>
+                        <dt>控制耗时</dt><dd class="mono" id="control-latency">--</dd>
+                    </dl>
+                </div>
+                <div class="defect-list">
+                    <div class="row-line">
+                        <h3>缺陷类别和数量</h3>
+                        <span class="chip mono" id="defect-total">0</span>
+                    </div>
+                    <div id="defect-classes"></div>
+                </div>
+                <div class="defect-list">
+                    <div class="row-line">
+                        <h3>关键故障信号</h3>
+                        <span class="chip" id="signal-total">0</span>
+                    </div>
+                    <div id="signal-list"></div>
+                </div>
+                <div class="defect-list">
+                    <h3>耗时分解</h3>
+                    <dl class="kv-grid" id="timing-grid"></dl>
                 </div>
             </aside>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>检测流程状态</h2>
+                <span class="chip">袋体到位 → 多光源采图 → A/B 面齐套 → Stage 1 → Stage 2 → 融合 → 分拣 → ACK</span>
+            </div>
+            <div class="flow" id="stage-flow"></div>
+        </section>
+
+        <section class="lower-grid">
+            <section class="panel">
+                <div class="panel-head">
+                    <h2>相机运行状态</h2>
+                </div>
+                <div id="camera-list"></div>
+            </section>
 
             <section class="panel">
-                <h2>最近结果</h2>
+                <div class="panel-head">
+                    <h2>历史检测记录</h2>
+                    <span class="chip mono" id="history-count">0</span>
+                </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
                                 <th>时间</th>
-                                <th>袋体</th>
-                                <th>相机</th>
-                                <th>后端</th>
+                                <th>Bag ID</th>
                                 <th>状态</th>
-                                <th>动作</th>
+                                <th>缺陷</th>
                                 <th>原因</th>
-                                <th>信号</th>
-                                <th>Ack</th>
-                                <th>PLC</th>
-                                <th>耗时</th>
-                                <th>框数</th>
+                                <th>PLC ACK</th>
+                                <th>总延迟</th>
+                                <th>控制</th>
                             </tr>
                         </thead>
                         <tbody id="history-body"></tbody>
                     </table>
                 </div>
-                <div class="empty" id="empty-state" hidden>暂无 C++ 结果</div>
+                <div class="empty" id="empty-history" hidden>暂无检测记录</div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head">
+                    <h2>故障信号与工程诊断</h2>
+                    <span class="status-chip neutral fresh-indicator" id="fresh-indicator">新数据</span>
+                </div>
+                <div id="fault-list"></div>
             </section>
         </section>
     </main>
 
-    <script>
-        const placeholder = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect width='640' height='480' fill='%23ffffff'/%3E%3Cpath d='M180 320h280' stroke='%23dfe5dd' stroke-width='18' stroke-linecap='round'/%3E%3Ccircle cx='320' cy='230' r='72' fill='%23f1f4ee'/%3E%3C/svg%3E";
+    <aside class="drawer" id="detail-drawer" aria-hidden="true">
+        <div class="panel-head">
+            <div>
+                <h2 id="drawer-title">检测详情</h2>
+                <div class="tiny mono" id="drawer-subtitle">--</div>
+            </div>
+            <button class="btn icon" id="drawer-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="inline">
+            <span class="status-chip neutral" id="drawer-status">--</span>
+            <span class="status-chip neutral fresh-indicator" id="drawer-fresh">主视图已有新数据</span>
+        </div>
+        <div class="drawer-body" id="drawer-body"></div>
+    </aside>
 
-        document.querySelectorAll("[id^='camera-image-']").forEach((image) => {
-            image.src = placeholder;
-        });
+    <script>
+        const placeholder = "";
+        const imageWidth = 1280;
+        const imageHeight = 960;
+        let selectedInspectionId = "";
+        let latestCurrentId = "";
+        let lastWorkbench = null;
+
+        const $ = (selector) => document.querySelector(selector);
 
         function escapeHtml(value) {
             return String(value ?? "")
@@ -406,122 +884,363 @@
         }
 
         function fmtMs(value) {
-            return `${Number(value || 0).toFixed(1)} ms`;
+            if (value === null || value === undefined || Number.isNaN(Number(value))) return "--";
+            return `${Number(value).toFixed(1)} ms`;
         }
 
-        function badgeClass(status) {
-            if (["异常", "超时", "采图异常"].includes(status)) return "pill warn";
-            if (["正常", "无袋"].includes(status)) return "pill ok";
-            return "pill pending";
+        function fmtPct(value) {
+            if (value === null || value === undefined) return "--";
+            return `${(Number(value) * 100).toFixed(1)}%`;
         }
 
-        function renderSignals(signals) {
-            if (!signals || signals.length === 0) {
-                return "<span class='pill ok'>normal</span>";
-            }
-            return signals.map((signal) => {
-                const cls = ["timeout", "plc_failure"].includes(signal) ? "pill warn" : "pill pending";
-                return `<span class="${cls}">${escapeHtml(signal)}</span>`;
+        function fmtNum(value) {
+            if (value === null || value === undefined) return "--";
+            return Number(value).toLocaleString("zh-CN");
+        }
+
+        function chipClass(family) {
+            return `status-chip ${family || "neutral"}`;
+        }
+
+        function statusChip(item) {
+            return `<span class="${chipClass(item?.status_family)}">${escapeHtml(item?.status_icon || "…")} ${escapeHtml(item?.status || item?.text || "--")}</span>`;
+        }
+
+        function stageStatusText(status) {
+            return {
+                ok: "正常",
+                warning: "警告",
+                wait: "等待",
+                failure: "失败",
+            }[status] || status || "--";
+        }
+
+        function metric(label, value, sub = "") {
+            return `<div class="metric"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${escapeHtml(value)}</div><div class="tiny">${escapeHtml(sub)}</div></div>`;
+        }
+
+        function renderMetrics(metrics) {
+            $("#metric-strip").innerHTML = [
+                metric("最近检测数量", fmtNum(metrics.recent_count), "袋级"),
+                metric("OK", fmtNum(metrics.ok_count), "最终判定"),
+                metric("NG", fmtNum(metrics.ng_count), `缺陷率 ${fmtPct(metrics.defect_rate)}`),
+                metric("超时数量", fmtNum(metrics.timeout_count), "故障保护"),
+                metric("PLC ACK 重试", fmtNum(metrics.ack_retry_count), "最近窗口"),
+                metric("平均检测延迟", fmtMs(metrics.avg_detection_latency_ms), metrics.avg_detection_latency_ms === null ? "等待新字段" : "袋级"),
+                metric("平均控制耗时", fmtMs(metrics.avg_control_ms), "PLC"),
+                metric("等待记录", fmtNum(metrics.waiting_count), "未最终判定"),
+            ].join("");
+        }
+
+        function renderBoxes(face) {
+            return (face.boxes || []).map((box) => {
+                const left = Math.max(0, Math.min(100, Number(box.x1 || 0) / imageWidth * 100));
+                const top = Math.max(0, Math.min(100, Number(box.y1 || 0) / imageHeight * 100));
+                const width = Math.max(1, Math.min(100 - left, (Number(box.x2 || 0) - Number(box.x1 || 0)) / imageWidth * 100));
+                const height = Math.max(1, Math.min(100 - top, (Number(box.y2 || 0) - Number(box.y1 || 0)) / imageHeight * 100));
+                const confidence = box.confidence === undefined ? "" : ` ${(Number(box.confidence) * 100).toFixed(1)}%`;
+                return `<div class="box" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%"><div class="box-label">${escapeHtml(box.label || "defect")}${confidence}</div></div>`;
             }).join("");
         }
 
-        function renderMetrics(payload) {
-            document.getElementById("recent-count").textContent = payload.total_events;
-            document.getElementById("defect-count").textContent = payload.defect_events;
-            document.getElementById("timeout-count").textContent = payload.timeout_events;
-            document.getElementById("ack-retry-count").textContent = payload.ack_retry_events;
-            document.getElementById("avg-latency-ms").textContent = fmtMs(payload.avg_latency_ms);
-            document.getElementById("avg-control-ms").textContent = fmtMs(payload.avg_control_ms);
-        }
-
-        function renderCameras(rows) {
-            const seen = new Set();
-            rows.forEach((row) => {
-                if (seen.has(row.camera_id)) return;
-                seen.add(row.camera_id);
-                const badge = document.getElementById(`camera-badge-${row.camera_id}`);
-                const status = document.getElementById(`camera-status-${row.camera_id}`);
-                const time = document.getElementById(`camera-time-${row.camera_id}`);
-                const counts = document.getElementById(`camera-counts-${row.camera_id}`);
-                const image = document.getElementById(`camera-image-${row.camera_id}`);
-                if (!badge || !status || !time || !counts || !image) return;
-                badge.className = badgeClass(row.status);
-                badge.textContent = row.status;
-                status.textContent = row.decision_action || row.status;
-                time.textContent = row.timestamp || "--";
-                counts.textContent = row.final_count;
-                image.src = row.image_url || placeholder;
-            });
-        }
-
-        function renderRows(rows) {
-            const body = document.getElementById("history-body");
-            const empty = document.getElementById("empty-state");
-            body.innerHTML = "";
-            empty.hidden = rows.length !== 0;
-            rows.forEach((row) => {
-                const tr = document.createElement("tr");
-                tr.innerHTML = `
-                    <td>${escapeHtml(row.timestamp)}</td>
-                    <td>${escapeHtml(row.bag_id)}</td>
-                    <td>${escapeHtml(row.camera_name)}</td>
-                    <td>${escapeHtml(row.camera_backend || "-")} / ${escapeHtml(row.plc_backend || "-")}</td>
-                    <td><span class="${badgeClass(row.status)}">${escapeHtml(row.status)}</span></td>
-                    <td>${escapeHtml(row.decision_action)}</td>
-                    <td>${escapeHtml(row.decision_reason)}</td>
-                    <td><div class="signals">${renderSignals(row.fault_signals)}</div></td>
-                    <td>${row.ack_attempts || "-"}</td>
-                    <td>${row.plc_success ? "正常" : "失败"}</td>
-                    <td>${fmtMs(row.latency_ms)}</td>
-                    <td>${row.final_count}</td>
+        function renderFaces(faces) {
+            $("#face-grid").innerHTML = (faces || []).map((face) => {
+                const image = face.image_url
+                    ? `<img src="${escapeHtml(face.image_url)}" alt="${escapeHtml(face.side)} 面检测图像">`
+                    : `<div class="placeholder">${escapeHtml(face.side || "-")} 面无图像</div>`;
+                return `
+                    <article class="vision-pane">
+                        <div class="vision-head">
+                            <strong>${escapeHtml(face.side)} 面 · ${escapeHtml(face.camera_name || "")}</strong>
+                            ${statusChip(face)}
+                        </div>
+                        <div class="image-box">
+                            ${image}
+                            ${renderBoxes(face)}
+                        </div>
+                        <div class="vision-head">
+                            <span class="vision-stage mono">${escapeHtml(face.frame_id || "--")}</span>
+                            <span class="vision-stage">缺陷框 ${fmtNum(face.final_count || 0)} · ${escapeHtml(face.stage_source || "none")}</span>
+                        </div>
+                    </article>
                 `;
-                body.appendChild(tr);
-            });
-            renderCameras(rows);
+            }).join("");
+        }
+
+        function renderDefects(item) {
+            $("#defect-total").textContent = fmtNum(item?.defect_count || 0);
+            const entries = Object.entries(item?.defect_classes || {});
+            $("#defect-classes").innerHTML = entries.length
+                ? entries.map(([label, count]) => `<div class="defect-row"><div class="row-line"><span>${escapeHtml(label)}</span><span class="mono">${fmtNum(count)}</span></div></div>`).join("")
+                : `<div class="tiny">未检出缺陷</div>`;
+        }
+
+        function renderSignals(item) {
+            const signals = item?.signals || [];
+            $("#signal-total").textContent = fmtNum(signals.length);
+            $("#signal-list").innerHTML = signals.length
+                ? signals.map((signal) => `<span class="status-chip warn">${escapeHtml(signal)}</span>`).join("")
+                : `<span class="status-chip ok">✓ normal</span>`;
+        }
+
+        function renderTimingGrid(item) {
+            const t = item?.timings || {};
+            const rows = [
+                ["袋体到位", t.presence_ms],
+                ["多光源采图", t.capture_ms],
+                ["A/B 齐套", t.bag_pairing_ms],
+                ["Stage 1", t.stage1_ms],
+                ["Stage 2", t.stage2_ms],
+                ["袋级融合", t.decision_ms],
+                ["顺序分拣", t.reorder_wait_ms],
+                ["PLC 控制", t.control_ms],
+            ];
+            $("#timing-grid").innerHTML = rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd class="mono">${fmtMs(value)}</dd>`).join("");
+        }
+
+        function renderCurrent(item) {
+            if (!item) {
+                $("#current-bag-id").textContent = "--";
+                $("#current-status").className = "status-chip neutral";
+                $("#current-status").textContent = "… 等待";
+                $("#current-updated").textContent = "--";
+                $("#face-grid").innerHTML = `<div class="empty">暂无当前检测</div>`;
+                return;
+            }
+            latestCurrentId = item.inspection_id;
+            $("#current-bag-id").textContent = item.bag_id || "--";
+            $("#current-status").className = chipClass(item.status_family);
+            $("#current-status").textContent = `${item.status_icon || ""} ${item.status}`;
+            $("#current-updated").textContent = item.updated_at || "--";
+            const large = $("#judgement-large");
+            large.className = `status-large ${item.status_family || "neutral"}`;
+            large.innerHTML = `<span class="icon">${escapeHtml(item.status_icon || "…")}</span><span class="text">${escapeHtml(item.status)}</span>`;
+            $("#decision-reason").textContent = item.decision_reason_text || "--";
+            $("#sort-state").innerHTML = `<span class="${chipClass(item.plc?.family)}">${escapeHtml(item.plc?.icon || "…")} ${escapeHtml(item.plc?.text || "--")}</span>`;
+            $("#bag-latency").textContent = fmtMs(item.bag_latency_ms);
+            $("#control-latency").textContent = fmtMs(item.control_ms);
+            renderFaces(item.faces);
+            renderDefects(item);
+            renderSignals(item);
+            renderTimingGrid(item);
+        }
+
+        function renderStages(stages) {
+            $("#stage-flow").innerHTML = (stages || []).map((stage) => `
+                <div class="flow-step">
+                    <div class="step-head">
+                        <span class="step-name">${escapeHtml(stage.name)}</span>
+                        <span class="${chipClass(stage.status === "failure" ? "danger" : stage.status === "warning" ? "warn" : stage.status === "ok" ? "ok" : "wait")}">${escapeHtml(stage.icon)} ${escapeHtml(stageStatusText(stage.status))}</span>
+                    </div>
+                    <div class="step-time">${fmtMs(stage.duration_ms)}</div>
+                    <div class="step-reason">${escapeHtml(stage.reason)}</div>
+                </div>
+            `).join("");
+        }
+
+        function renderCameras(cameras) {
+            $("#camera-list").innerHTML = (cameras || []).map((camera) => `
+                <div class="camera-row">
+                    <div class="camera-main">
+                        ${camera.image_url ? `<img class="camera-thumb" src="${escapeHtml(camera.image_url)}" alt="${escapeHtml(camera.camera_name)}">` : `<div class="camera-thumb"></div>`}
+                        <div>
+                            <div class="row-line">
+                                <strong>${escapeHtml(camera.side)} 面 · ${escapeHtml(camera.camera_name)}</strong>
+                                <span class="${chipClass(camera.status_family)}">${escapeHtml(camera.status_icon)} ${escapeHtml(camera.status)}</span>
+                            </div>
+                            <div class="tiny mono">${escapeHtml(camera.frame_id || "--")}</div>
+                            <div class="tiny">${escapeHtml(camera.detail || "--")}</div>
+                        </div>
+                    </div>
+                    <dl class="kv-grid">
+                        <dt>最近袋体</dt><dd class="mono">${escapeHtml(camera.last_bag_id || "--")}</dd>
+                        <dt>最近时间</dt><dd class="mono">${escapeHtml(camera.last_seen || "--")}</dd>
+                        <dt>Watch</dt><dd>${escapeHtml(camera.watch_dir || "--")}</dd>
+                    </dl>
+                </div>
+            `).join("");
+        }
+
+        function renderHistory(history) {
+            $("#history-count").textContent = fmtNum(history.length);
+            $("#empty-history").hidden = history.length !== 0;
+            $("#history-body").innerHTML = history.map((item) => `
+                <tr data-id="${escapeHtml(item.inspection_id)}" class="${item.inspection_id === selectedInspectionId ? "selected" : ""}">
+                    <td class="time">${escapeHtml(item.updated_at || "--")}</td>
+                    <td class="mono">${escapeHtml(item.bag_id || "--")}</td>
+                    <td>${statusChip(item)}</td>
+                    <td class="num">${fmtNum(item.defect_count)}</td>
+                    <td>${escapeHtml(item.decision_reason_text || "--")}</td>
+                    <td>${escapeHtml(item.plc?.text || "--")}</td>
+                    <td class="num">${fmtMs(item.bag_latency_ms)}</td>
+                    <td class="num">${fmtMs(item.control_ms)}</td>
+                </tr>
+            `).join("");
+        }
+
+        function renderFaults(metrics) {
+            const faults = metrics?.faults || [];
+            $("#fault-list").innerHTML = faults.length
+                ? faults.map((fault) => `
+                    <div class="fault-row">
+                        <div class="row-line">
+                            <strong class="mono">${escapeHtml(fault.bag_id)}</strong>
+                            <span class="${chipClass(fault.status_family)}">${escapeHtml(fault.status)}</span>
+                        </div>
+                        <div>${escapeHtml(fault.message || "--")}</div>
+                        <div class="signals">${(fault.signals || []).map((signal) => `<span class="status-chip warn">${escapeHtml(signal)}</span>`).join("")}</div>
+                        <div class="tiny mono">${escapeHtml(fault.timestamp || "--")}</div>
+                    </div>
+                `).join("")
+                : `<div class="empty">无故障信号</div>`;
+        }
+
+        function renderWorkbench(payload) {
+            lastWorkbench = payload;
+            renderMetrics(payload.metrics || {});
+            renderCurrent(payload.current);
+            renderStages(payload.current?.stages || []);
+            renderCameras(payload.cameras || []);
+            renderHistory(payload.history || []);
+            renderFaults(payload.metrics || {});
+            $("#refresh-time").textContent = payload.updated_at || "--";
+
+            const hasLockedOld = selectedInspectionId && payload.current?.inspection_id && selectedInspectionId !== payload.current.inspection_id;
+            $("#fresh-indicator").classList.toggle("show", Boolean(hasLockedOld));
+            $("#drawer-fresh").classList.toggle("show", Boolean(hasLockedOld));
+        }
+
+        function drawerSections(item) {
+            const eventRows = (item.events || []).map((event) => `
+                <tr>
+                    <td class="time">${escapeHtml(event.timestamp)}</td>
+                    <td class="mono">${escapeHtml(event.frame_id)}</td>
+                    <td>${escapeHtml(event.side)} 面</td>
+                    <td>${statusChip(event)}</td>
+                    <td>${escapeHtml(event.decision_reason_text)}</td>
+                    <td class="num">${fmtMs(event.latency_ms)}</td>
+                    <td class="num">${fmtMs(event.control_ms)}</td>
+                </tr>
+            `).join("");
+            const rawBlocks = (item.events || []).map((event) => `
+                <details>
+                    <summary>${escapeHtml(event.side)} 面 · ${escapeHtml(event.frame_id)} · 原始 JSON</summary>
+                    <pre>${escapeHtml(event.raw_json_pretty || "{}")}</pre>
+                </details>
+            `).join("");
+            const traceBlocks = (item.events || []).map((event) => `
+                <details>
+                    <summary>${escapeHtml(event.side)} 面 · ${escapeHtml(event.frame_id)} · Trace</summary>
+                    <pre>${escapeHtml((event.state_trace || []).join("\\n"))}</pre>
+                </details>
+            `).join("");
+            return `
+                <section class="drawer-section">
+                    <dl class="kv-grid">
+                        <dt>判定原因</dt><dd>${escapeHtml(item.decision_reason_text || "--")}</dd>
+                        <dt>PLC 分拣</dt><dd>${escapeHtml(item.plc?.text || "--")}</dd>
+                        <dt>缺陷数量</dt><dd class="mono">${fmtNum(item.defect_count)}</dd>
+                        <dt>总检测延迟</dt><dd class="mono">${fmtMs(item.bag_latency_ms)}</dd>
+                    </dl>
+                </section>
+                <section class="drawer-section">
+                    <h3>A/B 面结果</h3>
+                    <div class="image-grid" style="margin-top:8px">${(item.faces || []).map((face) => `
+                        <article class="vision-pane">
+                            <div class="vision-head"><strong>${escapeHtml(face.side)} 面</strong>${statusChip(face)}</div>
+                            <div class="image-box">${face.image_url ? `<img src="${escapeHtml(face.image_url)}" alt="${escapeHtml(face.side)} 面">` : `<div class="placeholder">无图像</div>`}${renderBoxes(face)}</div>
+                        </article>
+                    `).join("")}</div>
+                </section>
+                <section class="drawer-section">
+                    <h3>事件明细</h3>
+                    <div class="table-wrap" style="margin-top:8px;max-height:220px">
+                        <table>
+                            <thead><tr><th>时间</th><th>Frame</th><th>面</th><th>状态</th><th>原因</th><th>事件耗时</th><th>控制</th></tr></thead>
+                            <tbody>${eventRows}</tbody>
+                        </table>
+                    </div>
+                </section>
+                <section class="drawer-section">
+                    <details>
+                        <summary>工程字段与 Trace</summary>
+                        ${traceBlocks || "<pre>--</pre>"}
+                    </details>
+                </section>
+                <section class="drawer-section">
+                    <details>
+                        <summary>原始 JSON</summary>
+                        ${rawBlocks || "<pre>{}</pre>"}
+                    </details>
+                </section>
+            `;
+        }
+
+        async function openDrawer(inspectionId) {
+            selectedInspectionId = inspectionId;
+            const item = await requestJson(`/api/inspections/${encodeURIComponent(inspectionId)}`);
+            $("#drawer-title").textContent = `Bag ${item.bag_id}`;
+            $("#drawer-subtitle").textContent = `${item.inspection_id} · ${item.updated_at || "--"}`;
+            $("#drawer-status").className = chipClass(item.status_family);
+            $("#drawer-status").textContent = `${item.status_icon || ""} ${item.status}`;
+            $("#drawer-body").innerHTML = drawerSections(item);
+            $("#detail-drawer").classList.add("open");
+            $("#detail-drawer").setAttribute("aria-hidden", "false");
+            renderHistory(lastWorkbench?.history || []);
+            $("#drawer-fresh").classList.toggle("show", Boolean(latestCurrentId && selectedInspectionId !== latestCurrentId));
+        }
+
+        function closeDrawer() {
+            selectedInspectionId = "";
+            $("#detail-drawer").classList.remove("open");
+            $("#detail-drawer").setAttribute("aria-hidden", "true");
+            renderHistory(lastWorkbench?.history || []);
+            $("#drawer-fresh").classList.remove("show");
         }
 
         async function refreshStatus() {
             const payload = await requestJson("/api/status");
-            const state = document.getElementById("jsonl-state");
-            state.className = payload.result_jsonl_exists ? "pill ok" : "pill warn";
-            state.textContent = payload.result_jsonl_exists ? "JSONL OK" : "JSONL Missing";
-            document.getElementById("config-line").textContent =
-                `${payload.config_name} · ${payload.result_jsonl} · ${payload.database}`;
+            const state = $("#jsonl-state");
+            state.className = payload.result_jsonl_exists ? "status-chip ok" : "status-chip danger";
+            state.textContent = payload.result_jsonl_exists ? "✓ JSONL OK" : "✕ JSONL Missing";
+            $("#config-line").textContent = `${payload.config_name} · ${payload.result_jsonl} · ${payload.database}`;
         }
 
         async function refreshData() {
-            const [rows, metrics] = await Promise.all([
-                requestJson("/api/results/recent?limit=40"),
-                requestJson("/api/results/metrics?limit=80"),
-            ]);
-            renderRows(rows);
-            renderMetrics(metrics);
+            const payload = await requestJson("/api/workbench?limit=80");
+            renderWorkbench(payload);
+        }
+
+        async function refreshAll() {
+            await Promise.all([refreshStatus(), refreshData()]);
         }
 
         async function syncResults() {
             await requestJson("/api/results/sync", { method: "POST" });
-            await Promise.all([refreshStatus(), refreshData()]);
+            await refreshAll();
         }
 
-        document.getElementById("sync-btn").addEventListener("click", syncResults);
-        document.getElementById("refresh-btn").addEventListener("click", async () => {
-            await Promise.all([refreshStatus(), refreshData()]);
+        $("#sync-btn").addEventListener("click", syncResults);
+        $("#refresh-btn").addEventListener("click", refreshAll);
+        $("#drawer-close").addEventListener("click", closeDrawer);
+        $("#history-body").addEventListener("click", (event) => {
+            const row = event.target.closest("tr[data-id]");
+            if (row) openDrawer(row.dataset.id);
         });
 
-        document.getElementById("upload-btn").addEventListener("click", async () => {
-            const fileInput = document.getElementById("demo-image");
+        $("#upload-btn").addEventListener("click", async () => {
+            const fileInput = $("#demo-image");
             const file = fileInput.files[0];
             if (!file) return;
             const formData = new FormData();
-            formData.append("camera_id", document.getElementById("camera-select").value);
+            formData.append("camera_id", $("#camera-select").value);
             formData.append("image", file);
             await requestJson("/api/demo/upload", { method: "POST", body: formData });
             fileInput.value = "";
             await refreshStatus();
         });
 
-        refreshStatus();
-        refreshData();
+        refreshAll();
         setInterval(refreshData, 3000);
     </script>
 </body>

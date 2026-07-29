@@ -18,6 +18,12 @@ std::size_t burst_image_count(const FramePacket& packet) {
     }
 }
 
+std::string timing_value(double value) {
+    std::ostringstream out;
+    out << value;
+    return out.str();
+}
+
 }  // namespace
 
 InspectionResult make_fail_safe_bag_result(
@@ -50,7 +56,7 @@ BagCaptureAssembler::BagCaptureAssembler(
       capture_timeout_(capture_timeout) {}
 
 std::vector<FramePacket> BagCaptureAssembler::register_station_capture(const InspectionResult& station_result) {
-    const auto& packet = station_result.frame_packet;
+    auto packet = station_result.frame_packet;
     if (packet.bag_id.empty() || station_result.decision_result.control_action != "defect_queued") {
         return {};
     }
@@ -62,7 +68,11 @@ std::vector<FramePacket> BagCaptureAssembler::register_station_capture(const Ins
     if (context.representative.bag_id.empty()) {
         context.representative = packet;
         context.first_seen = Clock::now();
+        context.first_seen_system = packet.bag_first_seen_at.value_or(packet.received_at);
     }
+    packet.bag_first_seen_at = context.first_seen_system;
+    packet.metadata["timing.capture_ms"] = timing_value(station_result.timing.capture_ms);
+    packet.metadata["timing.advance_control_ms"] = timing_value(station_result.timing.advance_control_ms);
     context.sides[packet.camera_id] = packet;
 
     if (!context_complete(context)) {
@@ -70,6 +80,11 @@ std::vector<FramePacket> BagCaptureAssembler::register_station_capture(const Ins
     }
 
     auto packets = ordered_packets(context);
+    const auto pairing_ms = elapsed_ms(context.first_seen);
+    for (auto& ready_packet : packets) {
+        ready_packet.bag_first_seen_at = context.first_seen_system;
+        ready_packet.metadata["timing.bag_pairing_ms"] = timing_value(pairing_ms);
+    }
     contexts_.erase(packet.bag_id);
     closed_bag_ids_.insert(packet.bag_id);
     return packets;
@@ -159,6 +174,7 @@ void SortReorderBuffer::store_result(InspectionResult result) {
     }
     register_bag(result.frame_packet);
     auto& slot = slots_[result.frame_packet.bag_id];
+    result.timing.reorder_wait_ms = elapsed_ms(slot.registered_at);
     result.state_trace.push_back("sort_result_ready:" + result.frame_packet.bag_id);
     slot.result = std::move(result);
     slot.result_ready = true;
@@ -193,6 +209,7 @@ std::vector<InspectionResult> SortReorderBuffer::collect_ready() {
                 slot.representative,
                 "sort_result_timeout_fail_safe_ng",
                 true);
+            result.timing.reorder_wait_ms = elapsed_ms(slot.registered_at);
             result.state_trace.push_back("sort_reorder_timeout:" + bag_id);
             ready.push_back(std::move(result));
             slots_.erase(found);

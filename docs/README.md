@@ -1,6 +1,6 @@
 # Waterbag Inspection 文档
 
-Waterbag Inspection 是面向水样袋外观缺陷检测的工程评审型研究 demo。这个页面从真实硬件链路、观测层、模型工具、配置验证和运行方式几个维度，说明整个仓库。
+Waterbag Inspection 是面向水样袋外观缺陷检测的工程评审型研究 demo。这个页面从真实硬件链路、观测层、demo 辅助、模型工具、配置验证和运行方式几个维度，说明整个仓库。
 
 主链路目标是真实可复现：海康 MVS 相机 + Modbus TCP PLC/IO + C++ 服务 + JSONL + SQLite + Dashboard。mock 相机和 mock PLC 只用于 CI、无硬件开发和回归测试。
 
@@ -30,7 +30,7 @@ PLC 激光 presence gate
 | --- | --- | --- |
 | 现场感知层 | PLC / 相机 / 频闪 / 高速 IO | 负责到位检测、burst 触发、曝光同步和末端分拣动作 |
 | C++ 实时执行层 | C++17 | 相机输入、PLC presence gate、袋体组包、并发推理、顺序分拣、JSONL 输出 |
-| Python 观测层 | Flask / SQLite | 读取 C++ JSONL，同步到 SQLite，提供 Dashboard 和查询接口 |
+| Python 观测与 demo 辅助层 | Flask / SQLite | 同步 C++ JSONL 到 SQLite，提供 Dashboard、查询接口和无硬件样本上传到 C++ watch 目录 |
 | Python 模型工具层 | Ultralytics | YOLO 训练、benchmark、ONNX 导出和模型对比 |
 | 配置与验证层 | INI / CMake / tests | 管理运行参数、构建选项、线程数、超时、阈值和回归测试 |
 
@@ -128,7 +128,7 @@ flowchart LR
 | 路径 | 说明 |
 | --- | --- |
 | `cpp_backend/` | C++ 实时执行链路、PLC、相机驱动和测试 |
-| `waterbag_inspection/` | Python 看板、SQLite 同步和 CLI |
+| `waterbag_inspection/` | Python 看板、SQLite 同步、demo 上传辅助和 CLI |
 | `config/` | 运行配置、demo 配置和训练数据配置 |
 | `docs/` | 站点文档与分主题说明 |
 | `demo_data/` | 本地复现用的相机样本目录 |

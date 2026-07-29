@@ -28,6 +28,7 @@ private:
         FramePacket representative;
         std::unordered_map<int, FramePacket> sides;
         Clock::time_point first_seen = Clock::now();
+        SystemClock::time_point first_seen_system = SystemClock::now();
     };
 
     bool side_has_complete_burst(const FramePacket& packet) const;

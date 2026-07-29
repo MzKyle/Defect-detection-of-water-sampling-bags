@@ -285,7 +285,7 @@ coil_sort_ng = 11
 | --- | --- | --- |
 | `WATERBAG_CPP_CONFIG` | `config/cpp_backend/demo.ini` | 默认 C++ 配置 |
 | `WATERBAG_DASHBOARD_DB` | `artifacts/dashboard/inspection.db` | SQLite 路径 |
-| `WATERBAG_DASHBOARD_UPLOAD_DIR` | `artifacts/uploads` | 上传暂存目录 |
+| `WATERBAG_DASHBOARD_UPLOAD_DIR` | `artifacts/uploads` | demo 上传暂存目录，随后复制到 C++ watch 目录 |
 | `WATERBAG_DASHBOARD_HOST` | `0.0.0.0` | 看板监听地址 |
 | `WATERBAG_DASHBOARD_PORT` | `5000` | 看板端口 |
 | `WATERBAG_DASHBOARD_NAME` | `Waterbag Inspection Dashboard` | 页面标题 |
