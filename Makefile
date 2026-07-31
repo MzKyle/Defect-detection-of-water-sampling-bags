@@ -12,7 +12,7 @@ HARDWARE_CONFIG ?= config/cpp_backend/hardware_hik_mvs_modbus.ini
 DATA ?= config/waterbag.yaml
 DEVICE ?= 0
 
-.PHONY: configure-cpp build-cpp run-cpp-demo run-cpp-once run-cpp-watch hardware-check run-hardware-watch serve-dashboard sync-results test smoke install-train train-yolov8 train-yolo11 benchmark-models export-onnx python-boundary-check dashboard-smoke python-check verify verify-clean verify-demo verify-cpp verify-mock-once verify-python verify-wheelhouse verify-installed-dashboard verify-docker verify-docker-run clean-cpp
+.PHONY: configure-cpp build-cpp run-cpp-demo run-cpp-once run-cpp-watch hardware-check run-hardware-watch serve-dashboard sync-results test smoke install-train train-yolov8 train-yolo11 benchmark-models export-onnx python-boundary-check dashboard-smoke python-check verify verify-clean verify-demo verify-cpp verify-mock-once verify-python verify-wheelhouse verify-dashboard-smoke verify-installed-dashboard verify-docker verify-docker-run clean-cpp
 
 configure-cpp:
 	$(CMAKE) -S cpp_backend -B $(BUILD_DIR)
@@ -82,7 +82,7 @@ python-check:
 	$(PYTHON) scripts/check_python_realtime_boundary.py
 	$(PYTHON) scripts/smoke_dashboard.py --config $(CONFIG)
 
-verify: verify-clean verify-demo verify-cpp verify-mock-once verify-python verify-wheelhouse verify-installed-dashboard verify-docker
+verify: verify-clean verify-demo verify-cpp verify-mock-once verify-python verify-wheelhouse verify-dashboard-smoke verify-installed-dashboard verify-docker
 
 verify-clean:
 	$(CMAKE) -E remove_directory $(VERIFY_DIR)
@@ -105,13 +105,16 @@ verify-mock-once:
 verify-python:
 	$(PYTHON) -m compileall waterbag_inspection train_ultralytics.py train_v8.py train_yolo11.py benchmark_ultralytics_models.py export_ultralytics_onnx.py predict_twostage_multilight.py benchmark_twostage_multilight.py
 	$(PYTHON) scripts/check_python_realtime_boundary.py
-	$(PYTHON) scripts/smoke_dashboard.py --config $(VERIFY_CONFIG)
 
 verify-wheelhouse:
 	$(PYTHON) -m venv $(VERIFY_DIR)/build-venv
 	$(VERIFY_DIR)/build-venv/bin/python -m pip install --require-hashes -r requirements/build.lock
 	$(VERIFY_DIR)/build-venv/bin/python -m pip download --only-binary=:all: --require-hashes -r requirements/dashboard.lock --dest $(WHEELHOUSE_DIR)
 	$(VERIFY_DIR)/build-venv/bin/python -m build --wheel --no-isolation --outdir $(WHEELHOUSE_DIR)
+
+verify-dashboard-smoke:
+	$(VERIFY_DIR)/build-venv/bin/python -m pip install --no-index --find-links $(WHEELHOUSE_DIR) Flask
+	$(VERIFY_DIR)/build-venv/bin/python scripts/smoke_dashboard.py --config $(VERIFY_CONFIG)
 
 verify-installed-dashboard:
 	$(PYTHON) -m venv $(VERIFY_DIR)/install-venv
