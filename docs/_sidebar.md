@@ -3,6 +3,7 @@
 * 项目总览
   * [当前架构](architecture/README.md)
   * [实时执行链路](backend/README.md)
+  * [硬件在环复现](hardware/README.md)
   * [模型与部署链路](model-tools/README.md)
 
 * 数据与观测

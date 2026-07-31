@@ -4,12 +4,16 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.history/
+*.egg-info/
+dist/
 
 # 数据集（关键：忽略原始数据）
 datasets/
 
 # 输出文件（避免上传大体积结果）
 build/
+artifacts/
 runs/
 outputs/
 cropped_results/
@@ -17,7 +21,6 @@ detect_result/
 patch_vis/
 upper_detect_result/
 artifacts/*
-!artifacts/.gitkeep
 demo_data/camera1/*
 !demo_data/camera1/.gitkeep
 demo_data/camera2/*

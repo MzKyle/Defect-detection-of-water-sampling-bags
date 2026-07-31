@@ -11,7 +11,7 @@ from .storage import SQLiteDetectionRepository
 
 
 def create_web_app(settings: DashboardSettings, repository: SQLiteDetectionRepository) -> Flask:
-    app = Flask(__name__, template_folder=str(Path(__file__).resolve().parent.parent / "templates"))
+    app = Flask(__name__)
 
     @app.route("/")
     def index():
@@ -55,9 +55,33 @@ def create_web_app(settings: DashboardSettings, repository: SQLiteDetectionRepos
         limit = min(int(request.args.get("limit", 80)), 1000)
         return jsonify(repository.metrics(limit))
 
+    @app.route("/api/workbench")
+    def workbench():
+        limit = min(int(request.args.get("limit", 80)), 200)
+        return jsonify(repository.workbench(limit=limit, camera_configs=settings.cameras))
+
+    @app.route("/api/inspections/<inspection_id>")
+    def inspection_detail(inspection_id: str):
+        item = repository.inspection_detail(inspection_id, camera_configs=settings.cameras)
+        if item is None:
+            return jsonify({"error": "inspection not found"}), 404
+        return jsonify(item)
+
     @app.route("/api/results/sync", methods=["POST"])
     def sync_results():
         return jsonify({"synced": repository.sync_from_jsonl()})
+
+    @app.route("/api/source-image-event/<int:event_id>")
+    def source_image_event(event_id: int):
+        source_path = repository.source_path_for_event(event_id)
+        if not source_path:
+            return jsonify({"error": "event not found"}), 404
+        path = Path(source_path)
+        if not path.is_absolute():
+            path = ROOT_DIR / path
+        if not path.exists() or not path.is_file():
+            return jsonify({"error": "source image not found"}), 404
+        return send_file(path)
 
     @app.route("/api/source-image/<frame_id>")
     def source_image(frame_id: str):

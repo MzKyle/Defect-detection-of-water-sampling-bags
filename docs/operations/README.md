@@ -1,10 +1,18 @@
 # 运行与验证
 
-面向想把项目跑起来、验证链路、定位问题和做性能调优的人。建议先用 mock 后端跑通，再接入真实相机、PLC 和 ONNX 模型。
+面向想把项目跑起来、验证链路、定位问题和做性能调优的人。真实主链路是海康 MVS + Modbus TCP PLC/IO；mock 后端用于 CI 和无硬件回归。
 
 ## 一键命令
 
 Makefile 中保留了常用入口：
+
+```bash
+make build-cpp
+make hardware-check
+make run-hardware-watch
+```
+
+无硬件回归入口：
 
 ```bash
 make build-cpp
@@ -117,9 +125,48 @@ execution_feedbacks
 state_trace
 ```
 
+## 硬件在环预检
+
+连接海康 MVS 相机和 Modbus TCP PLC/IO 后，先运行：
+
+```bash
+make hardware-check
+```
+
+预检会打开相机 backend，读取 PLC presence/message/fault，并写 heartbeat coil。通过时输出：
+
+```text
+hardware_check_status":"ok"
+```
+
+如果失败，先不要启动 watch；按 [硬件在环复现](../hardware/README.md) 中的 IP、unit id、相机 SDK、触发源和寄存器映射排查。
+
+## 硬件 Watch 模式
+
+真实硬件链路使用：
+
+```bash
+make run-hardware-watch
+```
+
+硬件配置默认是：
+
+```text
+config/cpp_backend/hardware_hik_mvs_modbus.ini
+```
+
+这个配置使用 `runtime.input_mode=plc_presence`。C++ 服务会轮询 PLC presence，有袋时 arm 海康相机 burst，再通过 Modbus TCP 命令 PLC/频闪器执行多光源和相机触发序列。
+
+看板读取硬件结果：
+
+```bash
+python -m waterbag_inspection sync-results --config config/cpp_backend/hardware_hik_mvs_modbus.ini
+python -m waterbag_inspection serve --config config/cpp_backend/hardware_hik_mvs_modbus.ini
+```
+
 ## Watch 模式烟测
 
-启动 C++ 服务：
+无硬件 watch_dir 模式启动 C++ 服务：
 
 ```bash
 ./build/cpp_backend/waterbag_cpp_service --config config/cpp_backend/demo.ini --watch

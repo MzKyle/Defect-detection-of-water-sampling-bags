@@ -2,6 +2,8 @@
 __pycache__
 .pytest_cache
 artifacts
+build
+项目附加文件
 demo_data/camera1
 demo_data/camera2
 runs

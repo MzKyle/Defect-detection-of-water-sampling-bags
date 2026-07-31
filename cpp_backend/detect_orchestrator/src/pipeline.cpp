@@ -16,6 +16,18 @@ std::string metadata_value(const FramePacket& packet, const std::string& key, co
     return found == packet.metadata.end() ? fallback : found->second;
 }
 
+double metadata_double(const FramePacket& packet, const std::string& key) {
+    const auto found = packet.metadata.find(key);
+    if (found == packet.metadata.end()) {
+        return 0.0;
+    }
+    try {
+        return std::stod(found->second);
+    } catch (...) {
+        return 0.0;
+    }
+}
+
 std::optional<std::size_t> metadata_size(const FramePacket& packet, const std::string& key) {
     const auto found = packet.metadata.find(key);
     if (found == packet.metadata.end()) {
@@ -214,8 +226,10 @@ InspectionResult InspectionPipeline::process_packet(FramePacket packet) {
     defect_result.presence_result = station_result.presence_result;
     defect_result.timing.queue_delay_ms = station_result.timing.queue_delay_ms;
     defect_result.timing.presence_inference_ms = station_result.timing.presence_inference_ms;
+    defect_result.timing.capture_ms = station_result.timing.capture_ms;
     defect_result.timing.advance_control_ms = station_result.timing.advance_control_ms;
     defect_result.timing.total_ms += station_result.timing.total_ms;
+    defect_result.timing.bag_latency_ms = defect_result.timing.total_ms;
     defect_result.control_commands.insert(
         defect_result.control_commands.begin(),
         station_result.control_commands.begin(),
@@ -243,6 +257,7 @@ InspectionResult InspectionPipeline::process_station_packet(FramePacket packet) 
     result.presence_result.stage_name = "presence";
     result.presence_result.detector_backend = "plc_laser";
     result.presence_result.triggered = detection_config_.presence_enabled;
+    packet.metadata["plc.backend"] = plc_controller_->backend_name();
     if (detection_config_.presence_enabled) {
         result.state_trace.push_back("plc_laser_presence_waiting");
         const auto presence = plc_controller_->read_laser_presence(packet);
@@ -254,6 +269,7 @@ InspectionResult InspectionPipeline::process_station_packet(FramePacket packet) 
         packet.metadata["presence.message_valid"] = presence.message_valid ? "true" : "false";
         packet.metadata["presence.timed_out"] = presence.timed_out ? "true" : "false";
         packet.metadata["presence.bag_present"] = presence.bag_present ? "true" : "false";
+        packet.metadata["presence.bag_id"] = presence.bag_id;
         if (!presence.bag_id.empty()) {
             packet.bag_id = presence.bag_id;
             packet.metadata["bag.id"] = presence.bag_id;
@@ -290,6 +306,7 @@ InspectionResult InspectionPipeline::process_station_packet(FramePacket packet) 
         return result;
     }
 
+    const auto capture_started = Clock::now();
     const auto session = make_capture_session(packet);
     result.state_trace.push_back("capture_session:" + session.capture_session_id + ":clock=" + session.hardware_clock_source);
     burst_capture_->arm_burst(session, burst_plan_);
@@ -320,6 +337,7 @@ InspectionResult InspectionPipeline::process_station_packet(FramePacket packet) 
     } else {
         result.state_trace.push_back("burst_group_missing:" + session.capture_session_id);
     }
+    result.timing.capture_ms = elapsed_ms(capture_started);
 
     if (!capture_group || !capture_group->sync_valid) {
         result.decision_result.finalized = false;
@@ -362,6 +380,9 @@ InspectionResult InspectionPipeline::process_defect_packet(FramePacket packet) {
     const auto started = Clock::now();
     InspectionResult result;
     result.frame_packet = packet;
+    result.timing.capture_ms = metadata_double(packet, "timing.capture_ms");
+    result.timing.advance_control_ms = metadata_double(packet, "timing.advance_control_ms");
+    result.timing.bag_pairing_ms = metadata_double(packet, "timing.bag_pairing_ms");
     result.state_trace.push_back("defect_worker_received:" + packet.frame_id);
 
     const auto detection_packets = build_burst_detection_packets(packet);
@@ -416,6 +437,7 @@ InspectionResult InspectionPipeline::execute_sort_command(InspectionResult resul
         return result;
     }
 
+    const auto bag_started = result.frame_packet.bag_first_seen_at.value_or(result.frame_packet.received_at);
     const auto control_started = Clock::now();
     const auto decision_commands = build_commands(result.frame_packet, result.decision_result);
     result.state_trace.push_back("sorter_dispatch:" + result.decision_result.control_action + ":" + result.decision_result.reason);
@@ -429,6 +451,8 @@ InspectionResult InspectionPipeline::execute_sort_command(InspectionResult resul
         result.execution_feedbacks.push_back(plc_controller_->route_to_ng_bin(result.frame_packet));
     }
     result.timing.control_ms += elapsed_ms(control_started);
+    result.timing.bag_latency_ms = std::chrono::duration<double, std::milli>(
+        SystemClock::now() - bag_started).count();
     result.state_trace.push_back("command_done");
     return result;
 }

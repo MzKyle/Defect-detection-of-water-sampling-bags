@@ -12,17 +12,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure C++ backend
-        run: cmake -S cpp_backend -B build/cpp_backend
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
-      - name: Build C++ backend
-        run: cmake --build build/cpp_backend -j
+      - name: Verify baseline
+        run: make verify
 
-      - name: Run C++ tests
-        run: ctest --test-dir build/cpp_backend --output-on-failure
-
-      - name: Check Python dashboard and tools
-        run: python -m compileall waterbag_inspection train_ultralytics.py train_v8.py train_yolo11.py benchmark_ultralytics_models.py export_ultralytics_onnx.py
-
-      - name: Smoke sync dashboard database
-        run: python -m waterbag_inspection sync-results --config config/cpp_backend/demo.ini
+      - name: Upload wheelhouse
+        uses: actions/upload-artifact@v4
+        with:
+          name: waterbag-wheelhouse-linux-x86_64-py310
+          path: build/wheelhouse

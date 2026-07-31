@@ -47,6 +47,7 @@ private:
     void collect_and_publish_pending_results();
     void publish_sorted_results(std::vector<InspectionResult> results);
     void enqueue_sort_result(InspectionResult result);
+    void submit_packet(FramePacket packet);
     bool wait_until_ready(const std::filesystem::path& path) const;
     const CameraConfig* find_camera(int camera_id) const;
     bool should_accept_extension(const std::filesystem::path& path) const;

@@ -1,8 +1,8 @@
 # Waterbag Inspection 文档
 
-Waterbag Inspection 是面向水样袋外观缺陷检测的工业视觉系统。这个页面从实时链路、观测层、模型工具、配置验证和运行方式几个维度，说明整个仓库。
+Waterbag Inspection 是面向水样袋外观缺陷检测的工程评审型研究 demo。这个页面从真实硬件链路、观测层、demo 辅助、模型工具、配置验证和运行方式几个维度，说明整个仓库。
 
-实时执行链路放在 C++ 后端，Python 负责训练、导出、看板和离线观测。仓库默认提供 mock 相机和 mock PLC 跑通全链路，真实设备接入时通过相同接口替换底层适配器即可，主流程、数据结构、线程模型和结果保存方式保持一致。
+主链路目标是真实可复现：海康 MVS 相机 + Modbus TCP PLC/IO + C++ 服务 + JSONL + SQLite + Dashboard。mock 相机和 mock PLC 只用于 CI、无硬件开发和回归测试。
 
 ## 项目定位
 
@@ -30,7 +30,7 @@ PLC 激光 presence gate
 | --- | --- | --- |
 | 现场感知层 | PLC / 相机 / 频闪 / 高速 IO | 负责到位检测、burst 触发、曝光同步和末端分拣动作 |
 | C++ 实时执行层 | C++17 | 相机输入、PLC presence gate、袋体组包、并发推理、顺序分拣、JSONL 输出 |
-| Python 观测层 | Flask / SQLite | 读取 C++ JSONL，同步到 SQLite，提供 Dashboard 和查询接口 |
+| Python 观测与 demo 辅助层 | Flask / SQLite | 同步 C++ JSONL 到 SQLite，提供 Dashboard、查询接口和无硬件样本上传到 C++ watch 目录 |
 | Python 模型工具层 | Ultralytics | YOLO 训练、benchmark、ONNX 导出和模型对比 |
 | 配置与验证层 | INI / CMake / tests | 管理运行参数、构建选项、线程数、超时、阈值和回归测试 |
 
@@ -128,7 +128,7 @@ flowchart LR
 | 路径 | 说明 |
 | --- | --- |
 | `cpp_backend/` | C++ 实时执行链路、PLC、相机驱动和测试 |
-| `waterbag_inspection/` | Python 看板、SQLite 同步和 CLI |
+| `waterbag_inspection/` | Python 看板、SQLite 同步、demo 上传辅助和 CLI |
 | `config/` | 运行配置、demo 配置和训练数据配置 |
 | `docs/` | 站点文档与分主题说明 |
 | `demo_data/` | 本地复现用的相机样本目录 |
@@ -137,9 +137,26 @@ flowchart LR
 | `benchmark_ultralytics_models.py` | 模型评测和延迟对比 |
 | `export_ultralytics_onnx.py` | 导出 C++ 可加载的 ONNX 模型 |
 
-## 快速入口
+## 硬件入口
 
-最短路径先跑 mock 链路：
+真实硬件链路使用：
+
+```bash
+make build-cpp
+make hardware-check
+make run-hardware-watch
+```
+
+看板读取硬件链路输出：
+
+```bash
+python -m waterbag_inspection sync-results --config config/cpp_backend/hardware_hik_mvs_modbus.ini
+python -m waterbag_inspection serve --config config/cpp_backend/hardware_hik_mvs_modbus.ini
+```
+
+## Mock 回归入口
+
+无硬件环境先跑 mock 链路：
 
 ```bash
 make build-cpp
@@ -168,6 +185,7 @@ python -m waterbag_inspection serve --config config/cpp_backend/demo.ini
 | --- | --- |
 | [当前架构](architecture/README.md) | 从传感链路、硬触发、时间同步到算法和观测层的整体架构 |
 | [C++ 后端](backend/README.md) | 实时链路、线程模型、袋体组包、模型推理、PLC 动作和结果输出 |
+| [硬件在环复现](hardware/README.md) | 海康 MVS + Modbus TCP 的配置、register map、运行和排障 |
 | [前端与数据库](frontend/README.md) | Flask Dashboard、JSONL 增量导入、SQLite 表结构和 API |
 | [配置说明](configuration/README.md) | INI 配置、阈值、超时、worker、ONNX Runtime 和环境变量 |
 | [模型工具](model-tools/README.md) | 数据集准备、YOLO 训练、benchmark、ONNX 导出和上线口径 |

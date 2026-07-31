@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -73,6 +74,17 @@ std::shared_ptr<waterbag::ICameraBurstCapture> make_burst_capture(const waterbag
     throw std::runtime_error("unsupported camera_driver.backend: " + backend);
 }
 
+std::shared_ptr<waterbag::IPlcController> make_plc_controller(const waterbag::AppConfig& config) {
+    const auto& backend = config.plc.backend;
+    if (backend.empty() || backend == "mock") {
+        return std::make_shared<waterbag::MockSemanticPlcController>(config.plc);
+    }
+    if (backend == "modbus_tcp" || backend == "modbus") {
+        return std::make_shared<waterbag::ModbusTcpPlcController>(config.plc);
+    }
+    throw std::runtime_error("unsupported plc.backend: " + backend);
+}
+
 void save_and_log(waterbag::JsonlResultRepository& repository, const waterbag::InspectionResult& result) {
     repository.save(result);
     waterbag::Logger::instance().info(
@@ -88,7 +100,7 @@ std::shared_ptr<waterbag::InspectionPipeline> build_pipeline(const waterbag::App
     auto primary_detector = waterbag::make_detector(config.detectors.primary, "mock-primary");
     auto patch_detector = waterbag::make_detector(config.detectors.patch, "mock-patch");
     auto burst_capture = make_burst_capture(config);
-    auto plc = std::make_shared<waterbag::MockSemanticPlcController>(config.plc);
+    auto plc = make_plc_controller(config);
     burst_capture->start();
 
     return std::make_shared<waterbag::InspectionPipeline>(
@@ -120,6 +132,8 @@ int run_once(const waterbag::AppConfig& config, waterbag::InspectionPipeline& pi
         for (const auto& path : list_images(camera.watch_dir)) {
             auto packet = waterbag::make_frame_packet(camera, path);
             packet.source = "cpp_once";
+            packet.metadata["camera.backend"] = config.camera_driver.backend;
+            packet.metadata["plc.backend"] = config.plc.backend;
             const auto station_result = pipeline.process_station_packet(packet);
             save_and_log(repository, station_result);
             if (station_result.decision_result.control_action == "defect_queued") {
@@ -158,12 +172,85 @@ int run_once(const waterbag::AppConfig& config, waterbag::InspectionPipeline& pi
     return processed;
 }
 
+std::string json_escape(const std::string& value) {
+    std::ostringstream out;
+    for (char ch : value) {
+        switch (ch) {
+            case '\\':
+                out << "\\\\";
+                break;
+            case '"':
+                out << "\\\"";
+                break;
+            case '\n':
+                out << "\\n";
+                break;
+            case '\r':
+                out << "\\r";
+                break;
+            case '\t':
+                out << "\\t";
+                break;
+            default:
+                out << ch;
+        }
+    }
+    return out.str();
+}
+
+void print_check_result(const std::string& name, const waterbag::HardwareCheckResult& result) {
+    std::cout << "\"" << name << "\":{";
+    std::cout << "\"success\":" << (result.success ? "true" : "false") << ",";
+    std::cout << "\"details\":[";
+    for (std::size_t i = 0; i < result.details.size(); ++i) {
+        if (i > 0) {
+            std::cout << ",";
+        }
+        std::cout << "\"" << json_escape(result.details[i]) << "\"";
+    }
+    std::cout << "]}";
+}
+
+int run_hardware_check(const waterbag::AppConfig& config) {
+    waterbag::HardwareCheckResult camera_result;
+    waterbag::HardwareCheckResult plc_result;
+
+    try {
+        auto burst_capture = make_burst_capture(config);
+        burst_capture->start();
+        camera_result.details.push_back("camera_backend=" + config.camera_driver.backend);
+        camera_result.details.push_back("camera_count=" + std::to_string(config.runtime.cameras.size()));
+    } catch (const std::exception& error) {
+        camera_result.success = false;
+        camera_result.details.push_back("camera_check_failed:" + std::string(error.what()));
+    }
+
+    try {
+        auto plc = make_plc_controller(config);
+        plc_result = plc->check_hardware();
+        plc_result.details.insert(plc_result.details.begin(), "plc_backend=" + plc->backend_name());
+    } catch (const std::exception& error) {
+        plc_result.success = false;
+        plc_result.details.push_back("plc_check_failed:" + std::string(error.what()));
+    }
+
+    const bool success = camera_result.success && plc_result.success;
+    std::cout << "{";
+    std::cout << "\"hardware_check_status\":\"" << (success ? "ok" : "failed") << "\",";
+    print_check_result("camera", camera_result);
+    std::cout << ",";
+    print_check_result("plc", plc_result);
+    std::cout << "}\n";
+    return success ? 0 : 1;
+}
+
 void print_usage(const char* program) {
     std::cout
-        << "Usage: " << program << " [--config config/cpp_backend/demo.ini] [--once|--watch]\n"
+        << "Usage: " << program << " [--config config/cpp_backend/demo.ini] [--once|--watch|--check-hardware]\n"
         << "\n"
         << "  --once   Process images already present in camera watch dirs, then exit.\n"
         << "  --watch  Run realtime directory polling service until Ctrl+C.\n"
+        << "  --check-hardware  Open the configured camera backend and run PLC/IO preflight checks, then exit.\n"
         << "  --defect-workers N  Override runtime.defect_worker_count from config.\n";
 }
 
@@ -173,6 +260,7 @@ int main(int argc, char** argv) {
     std::filesystem::path config_path = "config/cpp_backend/demo.ini";
     bool once = false;
     bool watch = false;
+    bool check_hardware = false;
     std::size_t defect_worker_override = 0;
 
     for (int i = 1; i < argc; ++i) {
@@ -183,6 +271,8 @@ int main(int argc, char** argv) {
             once = true;
         } else if (arg == "--watch") {
             watch = true;
+        } else if (arg == "--check-hardware") {
+            check_hardware = true;
         } else if (arg == "--defect-workers" && i + 1 < argc) {
             defect_worker_override = static_cast<std::size_t>(std::stoull(argv[++i]));
         } else if (arg == "--help" || arg == "-h") {
@@ -204,6 +294,12 @@ int main(int argc, char** argv) {
         waterbag::Logger::instance().info("loaded config: " + config_path.string());
         waterbag::Logger::instance().info("defect_worker_count=" + std::to_string(config.runtime.defect_worker_count));
         waterbag::Logger::instance().info("camera_driver.backend=" + config.camera_driver.backend);
+        waterbag::Logger::instance().info("plc.backend=" + config.plc.backend);
+        waterbag::Logger::instance().info("runtime.input_mode=" + config.runtime.input_mode);
+
+        if (check_hardware) {
+            return run_hardware_check(config);
+        }
 
         waterbag::JsonlResultRepository repository(
             config.storage.result_jsonl,

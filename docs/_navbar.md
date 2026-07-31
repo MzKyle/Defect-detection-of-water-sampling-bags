@@ -1,6 +1,7 @@
 * [首页](/)
 * [架构](architecture/)
 * [C++ 后端](backend/)
+* [硬件复现](hardware/)
 * [前端与数据库](frontend/)
 * [模型工具](model-tools/)
 * [配置说明](configuration/)

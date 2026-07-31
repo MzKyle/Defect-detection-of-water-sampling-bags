@@ -141,6 +141,8 @@ AppConfig load_app_config(const std::filesystem::path& path) {
     AppConfig config;
 
     config.runtime.poll_interval = ini.get_ms("runtime", "poll_interval_ms", config.runtime.poll_interval);
+    config.runtime.input_mode = lower_copy(ini.get("runtime", "input_mode", config.runtime.input_mode));
+    config.runtime.publish_no_bag_results = ini.get_bool("runtime", "publish_no_bag_results", config.runtime.publish_no_bag_results);
     config.runtime.file_stable_for = ini.get_ms("runtime", "file_stable_ms", config.runtime.file_stable_for);
     config.runtime.file_ready_timeout = ini.get_ms("runtime", "file_ready_timeout_ms", config.runtime.file_ready_timeout);
     config.runtime.cooldown = ini.get_ms("runtime", "cooldown_ms", config.runtime.cooldown);
@@ -229,6 +231,7 @@ AppConfig load_app_config(const std::filesystem::path& path) {
     config.correlation.finalized_retention = ini.get_ms("correlation", "finalized_retention_ms", config.correlation.finalized_retention);
     config.correlation.timeout_action = ini.get("correlation", "timeout_action", config.correlation.timeout_action);
 
+    config.plc.backend = lower_copy(ini.get("plc", "backend", config.plc.backend));
     config.plc.enabled = ini.get_bool("plc", "enabled", config.plc.enabled);
     config.plc.ack_timeout = ini.get_ms("plc", "ack_timeout_ms", config.plc.ack_timeout);
     config.plc.presence_message_timeout = ini.get_ms("plc", "presence_message_timeout_ms", config.plc.presence_message_timeout);
@@ -237,6 +240,87 @@ AppConfig load_app_config(const std::filesystem::path& path) {
     config.plc.mock_fail_first_attempts = ini.get_int("plc", "mock_fail_first_attempts", config.plc.mock_fail_first_attempts);
     config.plc.mock_ack_latency = ini.get_ms("plc", "mock_ack_latency_ms", config.plc.mock_ack_latency);
     config.plc.mock_presence_latency = ini.get_ms("plc", "mock_presence_latency_ms", config.plc.mock_presence_latency);
+    config.plc.modbus_tcp.host = ini.get("plc.modbus_tcp", "host", config.plc.modbus_tcp.host);
+    config.plc.modbus_tcp.port = ini.get_int("plc.modbus_tcp", "port", config.plc.modbus_tcp.port);
+    config.plc.modbus_tcp.unit_id = ini.get_int("plc.modbus_tcp", "unit_id", config.plc.modbus_tcp.unit_id);
+    config.plc.modbus_tcp.connect_timeout = ini.get_ms("plc.modbus_tcp", "connect_timeout_ms", config.plc.modbus_tcp.connect_timeout);
+    config.plc.modbus_tcp.read_timeout = ini.get_ms("plc.modbus_tcp", "read_timeout_ms", config.plc.modbus_tcp.read_timeout);
+    config.plc.modbus_tcp.write_timeout = ini.get_ms("plc.modbus_tcp", "write_timeout_ms", config.plc.modbus_tcp.write_timeout);
+    config.plc.modbus_tcp.ack_timeout = ini.get_ms("plc.modbus_tcp", "ack_timeout_ms", config.plc.modbus_tcp.ack_timeout);
+    config.plc.modbus_tcp.ack_poll_interval = ini.get_ms("plc.modbus_tcp", "ack_poll_interval_ms", config.plc.modbus_tcp.ack_poll_interval);
+    config.plc.modbus_tcp.discrete_input_bag_present = ini.get_int(
+        "plc.modbus_tcp",
+        "discrete_input_bag_present",
+        config.plc.modbus_tcp.discrete_input_bag_present);
+    config.plc.modbus_tcp.input_register_message_id = ini.get_int(
+        "plc.modbus_tcp",
+        "input_register_message_id",
+        config.plc.modbus_tcp.input_register_message_id);
+    config.plc.modbus_tcp.input_register_bag_id_high = ini.get_int(
+        "plc.modbus_tcp",
+        "input_register_bag_id_high",
+        config.plc.modbus_tcp.input_register_bag_id_high);
+    config.plc.modbus_tcp.input_register_bag_id_low = ini.get_int(
+        "plc.modbus_tcp",
+        "input_register_bag_id_low",
+        config.plc.modbus_tcp.input_register_bag_id_low);
+    config.plc.modbus_tcp.input_register_ack_status = ini.get_int(
+        "plc.modbus_tcp",
+        "input_register_ack_status",
+        config.plc.modbus_tcp.input_register_ack_status);
+    config.plc.modbus_tcp.input_register_fault_code = ini.get_int(
+        "plc.modbus_tcp",
+        "input_register_fault_code",
+        config.plc.modbus_tcp.input_register_fault_code);
+    config.plc.modbus_tcp.holding_register_command_id = ini.get_int(
+        "plc.modbus_tcp",
+        "holding_register_command_id",
+        config.plc.modbus_tcp.holding_register_command_id);
+    config.plc.modbus_tcp.holding_register_bag_id_high = ini.get_int(
+        "plc.modbus_tcp",
+        "holding_register_bag_id_high",
+        config.plc.modbus_tcp.holding_register_bag_id_high);
+    config.plc.modbus_tcp.holding_register_bag_id_low = ini.get_int(
+        "plc.modbus_tcp",
+        "holding_register_bag_id_low",
+        config.plc.modbus_tcp.holding_register_bag_id_low);
+    config.plc.modbus_tcp.holding_register_action_code = ini.get_int(
+        "plc.modbus_tcp",
+        "holding_register_action_code",
+        config.plc.modbus_tcp.holding_register_action_code);
+    config.plc.modbus_tcp.holding_register_burst_frame_count = ini.get_int(
+        "plc.modbus_tcp",
+        "holding_register_burst_frame_count",
+        config.plc.modbus_tcp.holding_register_burst_frame_count);
+    config.plc.modbus_tcp.holding_register_burst_frame_base = ini.get_int(
+        "plc.modbus_tcp",
+        "holding_register_burst_frame_base",
+        config.plc.modbus_tcp.holding_register_burst_frame_base);
+    config.plc.modbus_tcp.burst_frame_register_stride = ini.get_int(
+        "plc.modbus_tcp",
+        "burst_frame_register_stride",
+        config.plc.modbus_tcp.burst_frame_register_stride);
+    config.plc.modbus_tcp.coil_start_burst = ini.get_int("plc.modbus_tcp", "coil_start_burst", config.plc.modbus_tcp.coil_start_burst);
+    config.plc.modbus_tcp.coil_station_release = ini.get_int("plc.modbus_tcp", "coil_station_release", config.plc.modbus_tcp.coil_station_release);
+    config.plc.modbus_tcp.coil_station_push = ini.get_int("plc.modbus_tcp", "coil_station_push", config.plc.modbus_tcp.coil_station_push);
+    config.plc.modbus_tcp.coil_station_restore = ini.get_int("plc.modbus_tcp", "coil_station_restore", config.plc.modbus_tcp.coil_station_restore);
+    config.plc.modbus_tcp.coil_sort_ok = ini.get_int("plc.modbus_tcp", "coil_sort_ok", config.plc.modbus_tcp.coil_sort_ok);
+    config.plc.modbus_tcp.coil_sort_ng = ini.get_int("plc.modbus_tcp", "coil_sort_ng", config.plc.modbus_tcp.coil_sort_ng);
+    config.plc.modbus_tcp.coil_heartbeat = ini.get_int("plc.modbus_tcp", "coil_heartbeat", config.plc.modbus_tcp.coil_heartbeat);
+    config.plc.modbus_tcp.ack_idle_value = ini.get_int("plc.modbus_tcp", "ack_idle_value", config.plc.modbus_tcp.ack_idle_value);
+    config.plc.modbus_tcp.ack_success_value = ini.get_int("plc.modbus_tcp", "ack_success_value", config.plc.modbus_tcp.ack_success_value);
+    config.plc.modbus_tcp.ack_failure_value = ini.get_int("plc.modbus_tcp", "ack_failure_value", config.plc.modbus_tcp.ack_failure_value);
+    config.plc.modbus_tcp.clear_command_coil_after_ack = ini.get_bool(
+        "plc.modbus_tcp",
+        "clear_command_coil_after_ack",
+        config.plc.modbus_tcp.clear_command_coil_after_ack);
+    config.plc.modbus_tcp.write_bag_id_registers = ini.get_bool(
+        "plc.modbus_tcp",
+        "write_bag_id_registers",
+        config.plc.modbus_tcp.write_bag_id_registers);
+    if (ini.has_section("plc.modbus_tcp")) {
+        config.plc.ack_timeout = config.plc.modbus_tcp.ack_timeout;
+    }
 
     config.storage.result_jsonl = ini.get("storage", "result_jsonl", config.storage.result_jsonl.string());
     config.storage.async_result_writes = ini.get_bool("storage", "async_result_writes", config.storage.async_result_writes);
@@ -249,6 +333,8 @@ AppConfig load_app_config(const std::filesystem::path& path) {
 
     config.service.auto_start = ini.get_bool("service", "auto_start", config.service.auto_start);
     config.service.run_for = ini.get_ms("service", "run_for_ms", config.service.run_for);
+    config.runtime.camera_backend = config.camera_driver.backend;
+    config.runtime.plc_backend = config.plc.backend;
 
     return config;
 }

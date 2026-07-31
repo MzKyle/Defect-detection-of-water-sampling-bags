@@ -1,17 +1,17 @@
 # Waterbag Inspection
 
-> 面向水样检测袋的缺陷检测的工业视觉项目
+> 面向水样检测袋缺陷检测的工程评审型研究 demo
 >
-> C++ 实时后端 / 多光源 burst / PLC 顺序分拣 / Python 观测层
+> 海康 MVS / Modbus TCP PLC-IO / C++ 实时后端 / 多光源 burst / Python 观测与模型工具层
 
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)](cpp_backend/README.md)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-A42E2B.svg)](LICENSE)
 
 
 
-Waterbag Inspection 把实时采图、光源时序、PLC 交互、袋级组包、缺陷检测、顺序分拣和结果追溯串成一套可运行、可测试、可观测的系统。
+Waterbag Inspection 把真实相机、PLC/IO、多光源 burst、袋级组包、缺陷检测、顺序分拣和结果追溯串成一条可复现的 C++ 硬件链路。
 
-实时执行流程放在 C++ 后端，Python 保留给训练、导出、看板和离线观测。当前开源默认使用 mock 相机和 mock PLC 跑通全链路；生产接入时主要替换 `camera_driver` 和 `PLC_driver` 的底层适配器，主流程、数据结构、线程模型和结果落盘方式保持不变。
+主路径是海康 MVS 相机 + Modbus TCP PLC/IO + C++ 服务 + JSONL + SQLite + Dashboard。mock 相机和 mock PLC 只保留给 CI、无硬件开发和回归测试；真实硬件复现不要求先接入真实缺陷模型，可以用 mock detector 验证采图、触发、ack、分拣和结果追溯闭环。
 
 ## 项目背景
 
@@ -44,6 +44,7 @@ flowchart TB
     subgraph CPP["C++ 实时执行层<br>C++ Real-time Execution Layer"]
         CAM["camera_driver<br>相机驱动"]
         PLC["PLC_driver<br>PLC驱动"]
+        WATCH["watch_dir input<br>无硬件样本输入"]
         ORCH["detect_orchestrator<br>检测编排器"]
         ASM["BagCaptureAssembler<br>水样袋采集组装器"]
         DET["defect worker pool<br>缺陷检测线程池"]
@@ -53,9 +54,10 @@ flowchart TB
         JSONL["JsonlResultRepository<br>JSONL结果仓库"]
     end
 
-    subgraph PY["Python 观测与模型工具层<br>Python Observation & Model Layer"]
+    subgraph PY["Python 观测、demo 辅助与模型工具层<br>Python Observation, Demo Helper & Model Layer"]
         SYNC["JSONL -> SQLite<br>数据同步"]
         WEB["Flask Dashboard / API<br>可视化看板接口"]
+        UPLOAD["demo upload -> C++ watch_dir<br>无硬件样本投料"]
         TRAIN["Ultralytics 训练 / benchmark / ONNX 导出<br>模型训练导出"]
         MODEL["ONNX weights<br>ONNX模型权重"]
     end
@@ -68,6 +70,7 @@ flowchart TB
     %% 核心检测流程
     CAM --> ORCH
     PLC --> ORCH
+    WATCH --> ORCH
     ORCH --> ASM
     ASM --> DET
     DET --> COR
@@ -81,6 +84,7 @@ flowchart TB
     %% 数据可视化
     JSONL --> SYNC
     SYNC --> WEB
+    UPLOAD -.手动样本复制.-> WATCH
 
     %% 模型支撑
     TRAIN --> MODEL
@@ -107,20 +111,39 @@ PLC 激光 presence gate
 - `camera_driver` 只负责相机采图、burst session 和 `CaptureGroup` 组包，不决定 OK/NG。
 - `PLC_driver` 只负责激光到位消息、光源 burst、工位拨杆和末端分拣动作，不做视觉判断。
 - `detect_orchestrator` 负责 presence gate、袋级状态机、推理调度、结果融合和顺序分拣编排。
-- Python 只读 C++ 输出的 JSONL，同步到 SQLite 并提供 Dashboard，不参与产线实时控制。
+- Python 同步 C++ 输出的 JSONL 到 SQLite 并提供 Dashboard；上传入口只用于无硬件 demo 投料，不执行 Python 检测、PLC 控制或分拣。
 - 训练和导出的模型通过 ONNX / Ultralytics 进入 C++ 实时后端。
 
 ## 项目代码文件
 
 - C++ 实时后端：相机输入、PLC、burst、推理调度、袋级状态机、顺序分拣。
-- Python 观测层：读取 C++ JSONL，同步到 SQLite，并提供 Dashboard 和查询接口。
+- Python 观测与 demo 辅助层：同步 C++ JSONL 到 SQLite，提供 Dashboard、查询接口和手动样本上传到 C++ `watch_dir`。
 - Python 模型工具：YOLO 训练、benchmark 和 ONNX 导出。
 - 文档：从架构、配置、运行到模型工具都有详细讲解。
 - demo 数据：可直接用于本地复现和烟测。
 
-## 快速开始
+## 硬件复现
 
-最短路径先跑 mock 链路：
+真实硬件链路：
+
+```bash
+make build-cpp
+make hardware-check
+make run-hardware-watch
+```
+
+另一个终端启动看板：
+
+```bash
+python -m waterbag_inspection sync-results --config config/cpp_backend/hardware_hik_mvs_modbus.ini
+python -m waterbag_inspection serve --config config/cpp_backend/hardware_hik_mvs_modbus.ini
+```
+
+硬件配置样例在 `config/cpp_backend/hardware_hik_mvs_modbus.ini`，Modbus register map 和接线/排障说明见 [硬件在环复现](docs/hardware/README.md)。
+
+## Mock 回归
+
+无硬件环境可以跑 mock 链路：
 
 ```bash
 make build-cpp
@@ -130,7 +153,7 @@ make sync-results
 make serve-dashboard
 ```
 
-如果你更喜欢手动命令，也可以直接用 CMake 和 Python：
+手动命令：
 
 ```bash
 cmake -S cpp_backend -B build/cpp_backend
@@ -145,8 +168,10 @@ python -m waterbag_inspection serve --config config/cpp_backend/demo.ini
 
 ## 核心特性
 
-- 默认 mock 相机和 mock PLC，方便先编译、测试、复现流程。
-- C++ 是唯一实时链路（高效快速，也方便后续继续做优化），避免 Python Web 和产线控制互相干扰。
+- C++ 是唯一实时链路，避免 Python Web 和产线控制互相干扰。
+- Python 上传按钮只是把无硬件样本复制到 C++ `watch_dir`，真实检测、状态机和分拣仍由 C++ `--watch` 服务完成。
+- 真实硬件主路径支持海康 MVS burst 采图和 Modbus TCP PLC/IO 控制。
+- mock 相机和 mock PLC 用于 CI、无硬件开发和回归测试。
 - PLC 激光 presence 负责有无袋判断，减少空背景采图和无效推理。
 - 两阶段检测把整图粗检和微缺陷补检拆开，适合水样袋这种低对比度场景，并提高效率和准确度。
 - 袋级状态机和顺序分拣按物理 BagID 组织，避免并发推理乱序打错袋。
@@ -160,18 +185,18 @@ python -m waterbag_inspection serve --config config/cpp_backend/demo.ini
 1. [工程文档总览](docs/README.md)
 2. [整体架构](docs/architecture/README.md)
 3. [C++ 后端](cpp_backend/README.md)
-4. [配置说明](docs/configuration/README.md)
-5. [运行与验证](docs/operations/README.md)
-6. [模型工具](docs/model-tools/README.md)
-7. [前端与数据库](docs/frontend/README.md)
-8. [清理边界说明](docs/cleanup/README.md)
+4. [硬件在环复现](docs/hardware/README.md)
+5. [配置说明](docs/configuration/README.md)
+6. [运行与验证](docs/operations/README.md)
+7. [模型工具](docs/model-tools/README.md)
+8. [前端与数据库](docs/frontend/README.md)
 
 ## 仓库结构
 
 | 路径 | 说明 |
 | --- | --- |
 | `cpp_backend/` | C++ 实时执行链路、PLC、相机驱动和测试 |
-| `waterbag_inspection/` | Python 看板、SQLite 同步和 CLI |
+| `waterbag_inspection/` | Python 看板、SQLite 同步、demo 上传辅助和 CLI |
 | `config/` | 运行配置、demo 配置和训练数据配置 |
 | `docs/` | 站点文档与分主题说明 |
 | `demo_data/` | 本地复现用的相机样本目录 |

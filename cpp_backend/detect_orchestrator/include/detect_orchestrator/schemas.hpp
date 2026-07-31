@@ -42,6 +42,10 @@ struct CameraDriverConfig {
 
 struct RuntimeConfig {
     std::vector<CameraConfig> cameras;
+    std::string input_mode = "watch_dir";
+    std::string camera_backend = "mock";
+    std::string plc_backend = "mock";
+    bool publish_no_bag_results = true;
     Milliseconds poll_interval{100};
     Milliseconds file_stable_for{300};
     Milliseconds file_ready_timeout{5000};
@@ -73,7 +77,44 @@ struct CorrelationConfig {
     std::string timeout_action = "reject";
 };
 
+struct ModbusTcpConfig {
+    std::string host = "127.0.0.1";
+    int port = 502;
+    int unit_id = 1;
+    Milliseconds connect_timeout{500};
+    Milliseconds read_timeout{200};
+    Milliseconds write_timeout{200};
+    Milliseconds ack_timeout{200};
+    Milliseconds ack_poll_interval{20};
+    int discrete_input_bag_present = 0;
+    int input_register_message_id = 0;
+    int input_register_bag_id_high = 1;
+    int input_register_bag_id_low = 2;
+    int input_register_ack_status = 10;
+    int input_register_fault_code = 11;
+    int holding_register_command_id = 0;
+    int holding_register_bag_id_high = 1;
+    int holding_register_bag_id_low = 2;
+    int holding_register_action_code = 5;
+    int holding_register_burst_frame_count = 6;
+    int holding_register_burst_frame_base = 20;
+    int burst_frame_register_stride = 4;
+    int coil_start_burst = 0;
+    int coil_station_release = 1;
+    int coil_station_push = 2;
+    int coil_station_restore = 3;
+    int coil_sort_ok = 10;
+    int coil_sort_ng = 11;
+    int coil_heartbeat = 20;
+    int ack_idle_value = 0;
+    int ack_success_value = 1;
+    int ack_failure_value = 2;
+    bool clear_command_coil_after_ack = true;
+    bool write_bag_id_registers = true;
+};
+
 struct PlcConfig {
+    std::string backend = "mock";
     bool enabled = true;
     Milliseconds ack_timeout{200};
     Milliseconds presence_message_timeout{200};
@@ -82,6 +123,7 @@ struct PlcConfig {
     int mock_fail_first_attempts = 0;
     Milliseconds mock_ack_latency{0};
     Milliseconds mock_presence_latency{0};
+    ModbusTcpConfig modbus_tcp;
 };
 
 struct DetectionBox {
@@ -115,6 +157,7 @@ struct FramePacket {
     std::string source_name;
     SystemClock::time_point received_at = SystemClock::now();
     SystemClock::time_point enqueued_at = SystemClock::now();
+    std::optional<SystemClock::time_point> bag_first_seen_at;
     std::optional<std::filesystem::file_time_type> source_mtime;
     bool replayed = false;
     std::string source = "runtime";
@@ -197,12 +240,16 @@ struct BagSummary {
 struct TimingBreakdown {
     double queue_delay_ms = 0.0;
     double presence_inference_ms = 0.0;
+    double capture_ms = 0.0;
     double advance_control_ms = 0.0;
+    double bag_pairing_ms = 0.0;
     double stage1_inference_ms = 0.0;
     double stage2_inference_ms = 0.0;
     double decision_ms = 0.0;
     double correlation_ms = 0.0;
+    double reorder_wait_ms = 0.0;
     double control_ms = 0.0;
+    double bag_latency_ms = 0.0;
     double total_ms = 0.0;
 };
 
@@ -236,6 +283,7 @@ inline std::string join_ints(const std::vector<int>& values, const std::string& 
 
 std::string infer_bag_id(const std::filesystem::path& source_path);
 FramePacket make_frame_packet(const CameraConfig& camera, const std::filesystem::path& source_path);
+FramePacket make_synthetic_frame_packet(const CameraConfig& camera, const std::string& source_name);
 std::string make_command_id();
 std::string status_from_action(const std::string& action, bool timed_out);
 std::string system_time_to_iso(SystemClock::time_point value);

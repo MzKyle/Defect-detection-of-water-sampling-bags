@@ -1,8 +1,8 @@
 # 前端与数据库
 
-Python 前端是观测层，不参与实时检测、PLC 控制或分拣决策。它的任务是把 C++ 后端已经输出的 JSONL 结果变成大众读者和现场人员能看懂的页面、指标和查询接口。
+Python 前端是观测层和无硬件 demo 辅助层，不参与实时检测、PLC 控制或分拣决策。它的任务是把 C++ 后端已经输出的 JSONL 结果变成大众读者和现场人员能看懂的页面、指标和查询接口，并提供手动样本上传到 C++ `watch_dir` 的辅助入口。
 
-实时链路由 Python Web 触发，就容易出现请求阻塞、进程重启、浏览器操作影响产线节拍等问题。当前架构中，C++ 服务可以独立长时间运行；看板挂了也不会影响采图和分拣。
+实时链路如果由 Python Web 执行检测或控制，就容易出现请求阻塞、进程重启、浏览器操作影响产线节拍等问题。当前架构中，C++ 服务可以独立长时间运行；看板挂了也不会影响真实硬件采图和分拣。
 
 ## 代码边界
 
@@ -25,14 +25,18 @@ flowchart LR
     DB --> API["Flask API"]
     API --> UI["Dashboard"]
     API --> IMG["source image endpoint"]
+    UI --> UPLOAD["/api/demo/upload"]
+    UPLOAD -.复制样本.-> WATCH["C++ watch_dir"]
+    WATCH -.由 C++ --watch 轮询.-> CPP
 ```
 
-C++ 和 Python 之间的合同只有 JSONL 文件：
+C++ 和 Python 之间的主合同是 JSONL 文件，另有一个 demo 辅助入口把上传样本复制到 C++ `watch_dir`：
 
 - C++ 写入每一条 `InspectionResult`。
 - Python 根据 offset 增量读取完整行。
 - SQLite 用 `frame_id` 去重 upsert。
-- Dashboard 和 API 只读 SQLite 与原图路径。
+- Dashboard 和 API 读取 SQLite 与原图路径。
+- `/api/demo/upload` 只复制手动样本，不执行 Python 检测、PLC 控制、burst 编排或分拣。
 
 ## SQLite 增量同步
 
@@ -74,6 +78,8 @@ python -m waterbag_inspection sync-results --config config/cpp_backend/demo.ini
 | `frame_id` | C++ | 单次结果 ID，唯一 |
 | `bag_id` | C++ | 袋体业务主键 |
 | `camera_id` / `camera_name` | C++ 配置 | 相机位置 |
+| `camera_backend` / `plc_backend` | C++ 配置 | 当前结果来自 mock、hikvision_mvs 或 modbus_tcp |
+| `plc_message_id` / `plc_bag_id` | PLC presence | PLC 消息序号和 PLC 提供的 BagID |
 | `source_path` | C++ | 原图或 burst 图路径 |
 | `status_code` / `status` | C++ + Python 映射 | `ok`、`defect`、`timeout`、`captured`、`no_bag` 等 |
 | `decision_action` | C++ | `accept`、`reject`、`await_peer_camera`、`defect_queued` 等 |
@@ -87,6 +93,8 @@ python -m waterbag_inspection sync-results --config config/cpp_backend/demo.ini
 | `advance_control_ms` | C++ | 工位放行动作耗时 |
 | `stage1_ms` / `stage2_ms` | C++ | 模型推理耗时 |
 | `control_ms` | C++ | 末端分拣动作耗时 |
+| `burst_sync_valid` | C++ | burst 图像和 PLC/触发计划是否通过同步校验 |
+| `hardware_check_status` | C++ | 硬件预检结果标记，普通检测结果通常为空 |
 | `final_boxes` | C++ | 最终缺陷框 JSON |
 | `control_commands` | C++ | 计划执行的控制命令 |
 | `execution_feedbacks` | C++ | PLC 执行反馈 |
@@ -119,7 +127,7 @@ http://127.0.0.1:5000
 - 手动同步按钮。
 - 上传图片到 C++ watch 目录的辅助入口。
 
-注意：上传入口只复制文件到相机 watch 目录，不执行 Python 检测。要让上传图片被处理，C++ 服务必须以 `--watch` 模式运行。
+注意：上传入口只复制文件到相机 watch 目录，不执行 Python 检测、PLC 控制、burst 编排或分拣。要让上传图片被处理，C++ 服务必须以 `--watch` 模式运行。
 
 ## API
 
@@ -162,7 +170,7 @@ config/cpp_backend/demo.ini
 | --- | --- | --- |
 | `WATERBAG_CPP_CONFIG` | `config/cpp_backend/demo.ini` | 默认 C++ 配置 |
 | `WATERBAG_DASHBOARD_DB` | `artifacts/dashboard/inspection.db` | SQLite 路径 |
-| `WATERBAG_DASHBOARD_UPLOAD_DIR` | `artifacts/uploads` | 上传暂存目录 |
+| `WATERBAG_DASHBOARD_UPLOAD_DIR` | `artifacts/uploads` | demo 上传暂存目录，随后复制到 C++ watch 目录 |
 | `WATERBAG_DASHBOARD_HOST` | `0.0.0.0` | 看板监听地址 |
 | `WATERBAG_DASHBOARD_PORT` | `5000` | 看板端口 |
 | `WATERBAG_DASHBOARD_NAME` | `Waterbag Inspection Dashboard` | 页面标题 |

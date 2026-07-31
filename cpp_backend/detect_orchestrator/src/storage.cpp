@@ -247,14 +247,23 @@ std::string inspection_result_to_json(const InspectionResult& result) {
     write_string(out, "bag_id", result.frame_packet.bag_id);
     out << "\"camera_id\":" << result.frame_packet.camera_id << ",";
     write_string(out, "camera_name", result.frame_packet.camera_name);
+    write_string(out, "camera_backend", metadata_value(result.frame_packet, "camera.backend"));
+    write_string(out, "plc_backend", metadata_value(result.frame_packet, "plc.backend"));
     write_string(out, "source_path", result.frame_packet.source_path.string());
-    write_bool(out, "bag_present", result.presence_result.is_defect());
+    write_bool(
+        out,
+        "bag_present",
+        result.presence_result.is_defect() || metadata_value(result.frame_packet, "presence.bag_present") == "true");
     write_number(out, "presence_ms", result.timing.presence_inference_ms);
     write_string(out, "presence_source", metadata_value(result.frame_packet, "presence.source"));
     write_string(out, "presence_message_id", metadata_value(result.frame_packet, "presence.message_id"));
+    write_string(out, "plc_message_id", metadata_value(result.frame_packet, "presence.message_id"));
+    write_string(out, "plc_bag_id", metadata_value(result.frame_packet, "presence.bag_id"));
     write_string(out, "presence_detail", metadata_value(result.frame_packet, "presence.detail"));
     write_bool(out, "presence_message_valid", metadata_value(result.frame_packet, "presence.message_valid", "true") == "true");
     write_bool(out, "presence_timed_out", metadata_value(result.frame_packet, "presence.timed_out") == "true");
+    write_bool(out, "burst_sync_valid", metadata_value(result.frame_packet, "burst.sync_valid") == "true");
+    write_string(out, "hardware_check_status", metadata_value(result.frame_packet, "hardware_check.status"));
     write_string(out, "status", status_from_action(result.decision_result.control_action, result.decision_result.timed_out));
     write_string(out, "action", result.decision_result.control_action);
     write_string(out, "reason", result.decision_result.reason);
@@ -266,10 +275,17 @@ std::string inspection_result_to_json(const InspectionResult& result) {
     write_bool(out, "plc_success", plc_success);
     out << "\"ack_attempts\":" << ack_attempts << ",";
     write_bool(out, "ack_retry", ack_retry);
+    write_number(out, "queue_delay_ms", result.timing.queue_delay_ms);
+    write_number(out, "capture_ms", result.timing.capture_ms);
+    write_number(out, "bag_pairing_ms", result.timing.bag_pairing_ms);
     write_number(out, "latency_ms", result.timing.total_ms);
+    write_number(out, "bag_latency_ms", result.timing.bag_latency_ms);
     write_number(out, "advance_control_ms", result.timing.advance_control_ms);
     write_number(out, "stage1_ms", result.timing.stage1_inference_ms);
     write_number(out, "stage2_ms", result.timing.stage2_inference_ms);
+    write_number(out, "decision_ms", result.timing.decision_ms);
+    write_number(out, "correlation_ms", result.timing.correlation_ms);
+    write_number(out, "reorder_wait_ms", result.timing.reorder_wait_ms);
     write_number(out, "control_ms", result.timing.control_ms);
     write_boxes(out, result.decision_result.final_boxes);
     out << ",";
