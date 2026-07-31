@@ -1,10 +1,11 @@
-#include <cassert>
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <netinet/in.h>
@@ -15,11 +16,28 @@
 
 #include "detect_orchestrator/bag_runtime.hpp"
 #include "detect_orchestrator/config.hpp"
+#include "detect_orchestrator/line_safety.hpp"
 #include "detect_orchestrator/pipeline.hpp"
+#include "detect_orchestrator/runtime.hpp"
 #include "detect_orchestrator/storage.hpp"
 #include "mock_camera_driver/mock_burst_capture.hpp"
 
 namespace {
+
+class TestFailure final : public std::runtime_error {
+public:
+    TestFailure(const char* expression, const char* file, int line)
+        : std::runtime_error(
+              std::string(file) + ":" + std::to_string(line) +
+              ": requirement failed: " + expression) {}
+};
+
+#define REQUIRE(expression) \
+    do { \
+        if (!(expression)) { \
+            throw TestFailure(#expression, __FILE__, __LINE__); \
+        } \
+    } while (false)
 
 std::filesystem::path make_file(const std::filesystem::path& path) {
     std::filesystem::create_directories(path.parent_path());
@@ -77,6 +95,91 @@ bool trace_contains(const waterbag::InspectionResult& result, const std::string&
     });
 }
 
+class InMemoryResultSink final : public waterbag::IResultSink {
+public:
+    void save(const waterbag::InspectionResult& result) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        results.push_back(result);
+    }
+
+    void close() override {}
+
+    std::vector<waterbag::InspectionResult> snapshot() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return results;
+    }
+
+    mutable std::mutex mutex_;
+    std::vector<waterbag::InspectionResult> results;
+};
+
+class CountingPlcController final : public waterbag::IPlcController {
+public:
+    std::string backend_name() const override {
+        return "counting";
+    }
+
+    waterbag::PlcLaserPresence read_laser_presence(const waterbag::FramePacket& packet) override {
+        waterbag::PlcLaserPresence signal;
+        signal.camera_id = packet.camera_id;
+        signal.station_id = "camera" + std::to_string(packet.camera_id);
+        signal.message_id = "counting-" + packet.frame_id;
+        signal.bag_id = packet.bag_id;
+        signal.bag_present = true;
+        return signal;
+    }
+
+    waterbag::PlcAck start_light_burst(const waterbag::CaptureSession&, const waterbag::BurstPlan&) override {
+        return waterbag::PlcAck{true, "ok", 0.0};
+    }
+
+    std::vector<waterbag::PlcBurstEvent> read_burst_events(const std::string&) override {
+        return {};
+    }
+
+    std::vector<waterbag::ExecutionFeedback> release_station_after_capture(const waterbag::CaptureSession&) override {
+        return {};
+    }
+
+    waterbag::ExecutionFeedback route_to_ok_bin(const waterbag::FramePacket& packet) override {
+        return feedback(packet, "route_to_ok_bin", true);
+    }
+
+    waterbag::ExecutionFeedback route_to_ng_bin(const waterbag::FramePacket& packet) override {
+        return feedback(packet, "route_to_ng_bin", true);
+    }
+
+    bool send_heartbeat() override {
+        ++heartbeat_count;
+        return heartbeat_ok;
+    }
+
+    waterbag::ExecutionFeedback request_line_stop(const waterbag::RuntimeFault& fault) override {
+        ++line_stop_count;
+        waterbag::FramePacket packet;
+        packet.frame_id = fault.frame_id.value_or("runtime-fault");
+        packet.bag_id = fault.bag_id.value_or("");
+        return feedback(packet, "request_line_stop", line_stop_ok);
+    }
+
+    static waterbag::ExecutionFeedback feedback(const waterbag::FramePacket& packet, const std::string& action, bool success) {
+        waterbag::ExecutionFeedback result;
+        result.command_id = waterbag::make_command_id();
+        result.frame_id = packet.frame_id;
+        result.target = "test_plc";
+        result.action = action;
+        result.success = success;
+        result.attempts = 1;
+        result.detail = success ? "ok" : "failed";
+        return result;
+    }
+
+    bool heartbeat_ok = true;
+    bool line_stop_ok = true;
+    std::atomic_int heartbeat_count{0};
+    std::atomic_int line_stop_count{0};
+};
+
 void push_u16(std::vector<std::uint8_t>& bytes, std::uint16_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
@@ -108,7 +211,7 @@ public:
         coils_.resize(128);
 
         server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-        assert(server_fd_ >= 0);
+        REQUIRE(server_fd_ >= 0);
         int enabled = 1;
         setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled));
 
@@ -116,11 +219,11 @@ public:
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         address.sin_port = htons(0);
-        assert(bind(server_fd_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
-        assert(listen(server_fd_, 16) == 0);
+        REQUIRE(bind(server_fd_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+        REQUIRE(listen(server_fd_, 16) == 0);
 
         socklen_t length = sizeof(address);
-        assert(getsockname(server_fd_, reinterpret_cast<sockaddr*>(&address), &length) == 0);
+        REQUIRE(getsockname(server_fd_, reinterpret_cast<sockaddr*>(&address), &length) == 0);
         port_ = ntohs(address.sin_port);
         running_ = true;
         thread_ = std::thread(&FakeModbusTcpServer::accept_loop, this);
@@ -148,6 +251,11 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         input_registers_[1] = static_cast<std::uint16_t>((value >> 16) & 0xFFFFU);
         input_registers_[2] = static_cast<std::uint16_t>(value & 0xFFFFU);
+    }
+
+    void set_fault_code(std::uint16_t value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        input_registers_[11] = value;
     }
 
     bool coil(std::size_t address) const {
@@ -316,10 +424,10 @@ void test_presence_gate_skips_empty_frame() {
     auto packet = waterbag::make_frame_packet(camera, path);
     auto result = pipeline->process_station_packet(packet);
 
-    assert(result.decision_result.control_action == "no_bag");
-    assert(result.decision_result.reason == "plc_laser_no_bag");
-    assert(result.stage1_result.boxes.empty());
-    assert(result.execution_feedbacks.empty());
+    REQUIRE(result.decision_result.control_action == "no_bag");
+    REQUIRE(result.decision_result.reason == "plc_laser_no_bag");
+    REQUIRE(result.stage1_result.boxes.empty());
+    REQUIRE(result.execution_feedbacks.empty());
 }
 
 void test_plc_laser_presence_message_drives_gate() {
@@ -333,12 +441,12 @@ void test_plc_laser_presence_message_drives_gate() {
     packet.metadata["plc.bag_id"] = "bag_from_plc_42";
     auto result = pipeline->process_station_packet(packet);
 
-    assert(result.presence_result.detector_backend == "plc_laser");
-    assert(result.presence_result.is_defect());
-    assert(result.decision_result.control_action == "defect_queued");
-    assert(result.frame_packet.bag_id == "bag_from_plc_42");
-    assert(result.frame_packet.metadata.at("presence.message_id") == "plc-msg-42");
-    assert(trace_contains(result, "plc_laser_presence:bag_present"));
+    REQUIRE(result.presence_result.detector_backend == "plc_laser");
+    REQUIRE(result.presence_result.is_defect());
+    REQUIRE(result.decision_result.control_action == "defect_queued");
+    REQUIRE(result.frame_packet.bag_id == "bag_from_plc_42");
+    REQUIRE(result.frame_packet.metadata.at("presence.message_id") == "plc-msg-42");
+    REQUIRE(trace_contains(result, "plc_laser_presence:bag_present"));
 }
 
 void test_plc_laser_presence_timeout_is_reported() {
@@ -352,11 +460,11 @@ void test_plc_laser_presence_timeout_is_reported() {
     auto packet = waterbag::make_frame_packet(camera, path);
     auto result = pipeline->process_station_packet(packet);
 
-    assert(result.decision_result.control_action == "no_bag");
-    assert(result.decision_result.reason == "plc_laser_presence_timeout");
-    assert(result.decision_result.timed_out);
-    assert(result.bag_summary.timed_out);
-    assert(result.frame_packet.metadata.at("presence.timed_out") == "true");
+    REQUIRE(result.decision_result.control_action == "no_bag");
+    REQUIRE(result.decision_result.reason == "plc_laser_presence_timeout");
+    REQUIRE(result.decision_result.timed_out);
+    REQUIRE(result.bag_summary.timed_out);
+    REQUIRE(result.frame_packet.metadata.at("presence.timed_out") == "true");
 }
 
 void test_presence_triggers_lever_actions_before_defect_decision() {
@@ -371,42 +479,42 @@ void test_presence_triggers_lever_actions_before_defect_decision() {
 
     auto p1 = waterbag::make_frame_packet(cam1, make_file(root / "bag_100_cam1_good.jpg"));
     auto r1 = pipeline->process_station_packet(p1);
-    assert(r1.presence_result.is_defect());
-    assert(r1.decision_result.control_action == "defect_queued");
-    assert(command_attempts(r1, "push_bag_after_capture") == 2);
-    assert(command_attempts(r1, "restore_after_push") == 2);
-    assert(command_attempts(r1, "release_bag_after_capture") == 2);
-    assert(command_attempts(r1, "restore_blocking_position") == 2);
-    assert(has_command_target(r1, "camera1_upper_lever"));
-    assert(has_command_target(r1, "camera1_bottom_lever"));
+    REQUIRE(r1.presence_result.is_defect());
+    REQUIRE(r1.decision_result.control_action == "defect_queued");
+    REQUIRE(command_attempts(r1, "push_bag_after_capture") == 2);
+    REQUIRE(command_attempts(r1, "restore_after_push") == 2);
+    REQUIRE(command_attempts(r1, "release_bag_after_capture") == 2);
+    REQUIRE(command_attempts(r1, "restore_blocking_position") == 2);
+    REQUIRE(has_command_target(r1, "camera1_upper_lever"));
+    REQUIRE(has_command_target(r1, "camera1_bottom_lever"));
     const auto cam1_actions = command_actions_for_station(r1, 1);
-    assert(cam1_actions.size() == 4);
-    assert(cam1_actions[0] == "release_bag_after_capture");
-    assert(cam1_actions[1] == "push_bag_after_capture");
-    assert(cam1_actions[2] == "restore_after_push");
-    assert(cam1_actions[3] == "restore_blocking_position");
+    REQUIRE(cam1_actions.size() == 4);
+    REQUIRE(cam1_actions[0] == "release_bag_after_capture");
+    REQUIRE(cam1_actions[1] == "push_bag_after_capture");
+    REQUIRE(cam1_actions[2] == "restore_after_push");
+    REQUIRE(cam1_actions[3] == "restore_blocking_position");
     auto d1 = pipeline->process_defect_packet(p1);
-    assert(d1.decision_result.control_action == "await_peer_camera");
-    assert(command_attempts(d1, "push_bag_after_capture") == 0);
+    REQUIRE(d1.decision_result.control_action == "await_peer_camera");
+    REQUIRE(command_attempts(d1, "push_bag_after_capture") == 0);
 
     auto p2 = waterbag::make_frame_packet(cam2, make_file(root / "bag_100_cam2_good.jpg"));
     auto r2 = pipeline->process_station_packet(p2);
-    assert(r2.decision_result.control_action == "defect_queued");
-    assert(command_attempts(r2, "push_bag_after_capture") == 2);
-    assert(command_attempts(r2, "restore_after_push") == 2);
-    assert(command_attempts(r2, "release_bag_after_capture") == 2);
-    assert(command_attempts(r2, "restore_blocking_position") == 2);
-    assert(has_command_target(r2, "camera2_upper_lever"));
-    assert(has_command_target(r2, "camera2_bottom_lever"));
+    REQUIRE(r2.decision_result.control_action == "defect_queued");
+    REQUIRE(command_attempts(r2, "push_bag_after_capture") == 2);
+    REQUIRE(command_attempts(r2, "restore_after_push") == 2);
+    REQUIRE(command_attempts(r2, "release_bag_after_capture") == 2);
+    REQUIRE(command_attempts(r2, "restore_blocking_position") == 2);
+    REQUIRE(has_command_target(r2, "camera2_upper_lever"));
+    REQUIRE(has_command_target(r2, "camera2_bottom_lever"));
     const auto cam2_actions = command_actions_for_station(r2, 2);
-    assert(cam2_actions.size() >= 4);
-    assert(cam2_actions[0] == "release_bag_after_capture");
-    assert(cam2_actions[1] == "push_bag_after_capture");
+    REQUIRE(cam2_actions.size() >= 4);
+    REQUIRE(cam2_actions[0] == "release_bag_after_capture");
+    REQUIRE(cam2_actions[1] == "push_bag_after_capture");
     auto d2 = pipeline->process_defect_packet(p2);
-    assert(d2.decision_result.control_action == "accept");
-    assert(command_attempts(d2, "route_to_ok_bin") == 0);
+    REQUIRE(d2.decision_result.control_action == "accept");
+    REQUIRE(command_attempts(d2, "route_to_ok_bin") == 0);
     auto sorted = pipeline->execute_sort_command(d2);
-    assert(command_attempts(sorted, "route_to_ok_bin") == 2);
+    REQUIRE(command_attempts(sorted, "route_to_ok_bin") == 2);
 }
 
 void test_jsonl_storage_contains_presence_fields() {
@@ -424,18 +532,18 @@ void test_jsonl_storage_contains_presence_fields() {
     std::ifstream input(result_path);
     std::string line;
     std::getline(input, line);
-    assert(line.find("\"bag_present\":true") != std::string::npos);
-    assert(line.find("\"presence_source\":\"plc_laser\"") != std::string::npos);
-    assert(line.find("\"presence_message_valid\":true") != std::string::npos);
-    assert(line.find("\"advance_control_ms\"") != std::string::npos);
-    assert(line.find("\"capture_ms\"") != std::string::npos);
-    assert(line.find("\"decision_ms\"") != std::string::npos);
-    assert(line.find("\"correlation_ms\"") != std::string::npos);
-    assert(line.find("\"bag_latency_ms\"") != std::string::npos);
-    assert(line.find("\"control_commands\"") != std::string::npos);
-    assert(line.find("push_bag_after_capture") != std::string::npos);
-    assert(line.find("burst_alignment") != std::string::npos);
-    assert(line.find("unified_hardware_clock") != std::string::npos);
+    REQUIRE(line.find("\"bag_present\":true") != std::string::npos);
+    REQUIRE(line.find("\"presence_source\":\"plc_laser\"") != std::string::npos);
+    REQUIRE(line.find("\"presence_message_valid\":true") != std::string::npos);
+    REQUIRE(line.find("\"advance_control_ms\"") != std::string::npos);
+    REQUIRE(line.find("\"capture_ms\"") != std::string::npos);
+    REQUIRE(line.find("\"decision_ms\"") != std::string::npos);
+    REQUIRE(line.find("\"correlation_ms\"") != std::string::npos);
+    REQUIRE(line.find("\"bag_latency_ms\"") != std::string::npos);
+    REQUIRE(line.find("\"control_commands\"") != std::string::npos);
+    REQUIRE(line.find("push_bag_after_capture") != std::string::npos);
+    REQUIRE(line.find("burst_alignment") != std::string::npos);
+    REQUIRE(line.find("unified_hardware_clock") != std::string::npos);
 }
 
 void test_jsonl_storage_can_write_asynchronously() {
@@ -454,8 +562,8 @@ void test_jsonl_storage_can_write_asynchronously() {
     std::ifstream input(result_path);
     std::string line;
     std::getline(input, line);
-    assert(line.find("\"bag_id\":\"bag_201\"") != std::string::npos);
-    assert(repo.dropped_results() == 0);
+    REQUIRE(line.find("\"bag_id\":\"bag_201\"") != std::string::npos);
+    REQUIRE(repo.dropped_results() == 0);
 }
 
 void test_burst_alignment_uses_unified_hardware_clock() {
@@ -472,15 +580,15 @@ void test_burst_alignment_uses_unified_hardware_clock() {
     plc.start_light_burst(session, plan);
 
     auto group = camera_burst.poll_completed_group(session.capture_session_id);
-    assert(group.has_value());
+    REQUIRE(group.has_value());
     const auto alignments = waterbag::align_camera_and_plc_events(*group, plc.read_burst_events(session.capture_session_id));
-    assert(alignments.size() == plan.frames.size());
+    REQUIRE(alignments.size() == plan.frames.size());
     for (const auto& alignment : alignments) {
-        assert(alignment.light_on_before_exposure);
-        assert(alignment.light_off_after_exposure);
-        assert(alignment.within_jitter_tolerance);
-        assert(alignment.trigger_to_exposure_jitter_us == 0);
-        assert(alignment.hardware_clock_source == waterbag::UnifiedHardwareClock::source_name());
+        REQUIRE(alignment.light_on_before_exposure);
+        REQUIRE(alignment.light_off_after_exposure);
+        REQUIRE(alignment.within_jitter_tolerance);
+        REQUIRE(alignment.trigger_to_exposure_jitter_us == 0);
+        REQUIRE(alignment.hardware_clock_source == waterbag::UnifiedHardwareClock::source_name());
     }
 }
 
@@ -492,12 +600,12 @@ void test_station_packet_exports_burst_images_for_defect_worker() {
 
     auto result = pipeline->process_station_packet(packet);
 
-    assert(result.decision_result.control_action == "defect_queued");
-    assert(result.frame_packet.metadata.at("burst.image_count") == "3");
-    assert(result.frame_packet.metadata.at("burst.images.0.light_id") == "L1_BACKLIGHT");
-    assert(result.frame_packet.metadata.at("burst.images.1.light_id") == "L2L3_DUAL_DARKFIELD");
-    assert(result.frame_packet.metadata.at("burst.images.2.light_id") == "L4_CROSS_POLARIZED");
-    assert(trace_contains(result, "burst_detection_inputs:3"));
+    REQUIRE(result.decision_result.control_action == "defect_queued");
+    REQUIRE(result.frame_packet.metadata.at("burst.image_count") == "3");
+    REQUIRE(result.frame_packet.metadata.at("burst.images.0.light_id") == "L1_BACKLIGHT");
+    REQUIRE(result.frame_packet.metadata.at("burst.images.1.light_id") == "L2L3_DUAL_DARKFIELD");
+    REQUIRE(result.frame_packet.metadata.at("burst.images.2.light_id") == "L4_CROSS_POLARIZED");
+    REQUIRE(trace_contains(result, "burst_detection_inputs:3"));
 }
 
 void test_defect_detection_fuses_multi_light_burst_inputs() {
@@ -511,20 +619,20 @@ void test_defect_detection_fuses_multi_light_burst_inputs() {
     auto station1 = pipeline->process_station_packet(packet1);
     auto defect1 = pipeline->process_defect_packet(station1.frame_packet);
 
-    assert(trace_contains(defect1, "defect_inputs:3"));
-    assert(trace_contains(defect1, "stage1_light:L1_BACKLIGHT:boxes=0"));
-    assert(trace_contains(defect1, "stage2_light:L2L3_DUAL_DARKFIELD:boxes=1"));
-    assert(trace_contains(defect1, "stage2_fused:boxes=3"));
-    assert(defect1.stage2_result.detector_backend.find("multi_light_fusion") != std::string::npos);
-    assert(defect1.stage2_result.boxes.size() == 3);
-    assert(defect1.decision_result.control_action == "await_peer_camera");
-    assert(defect1.decision_result.stage_source == "stage2");
+    REQUIRE(trace_contains(defect1, "defect_inputs:3"));
+    REQUIRE(trace_contains(defect1, "stage1_light:L1_BACKLIGHT:boxes=0"));
+    REQUIRE(trace_contains(defect1, "stage2_light:L2L3_DUAL_DARKFIELD:boxes=1"));
+    REQUIRE(trace_contains(defect1, "stage2_fused:boxes=3"));
+    REQUIRE(defect1.stage2_result.detector_backend.find("multi_light_fusion") != std::string::npos);
+    REQUIRE(defect1.stage2_result.boxes.size() == 3);
+    REQUIRE(defect1.decision_result.control_action == "await_peer_camera");
+    REQUIRE(defect1.decision_result.stage_source == "stage2");
 
     auto station2 = pipeline->process_station_packet(packet2);
     auto defect2 = pipeline->process_defect_packet(station2.frame_packet);
-    assert(defect2.decision_result.control_action == "reject");
-    assert(defect2.decision_result.reason == "aggregate_defect_detected");
-    assert(command_attempts(defect2, "route_to_ng_bin") == 0);
+    REQUIRE(defect2.decision_result.control_action == "reject");
+    REQUIRE(defect2.decision_result.reason == "aggregate_defect_detected");
+    REQUIRE(command_attempts(defect2, "route_to_ng_bin") == 0);
 }
 
 void test_bag_capture_assembler_waits_for_six_images() {
@@ -540,17 +648,17 @@ void test_bag_capture_assembler_waits_for_six_images() {
     auto r2 = pipeline->process_station_packet(p2);
 
     auto first = assembler.register_station_capture(r1);
-    assert(first.empty());
+    REQUIRE(first.empty());
     auto complete = assembler.register_station_capture(r2);
-    assert(complete.size() == 2);
-    assert(complete[0].camera_id == 1);
-    assert(complete[1].camera_id == 2);
-    assert(complete[0].metadata.at("burst.image_count") == "3");
-    assert(complete[1].metadata.at("burst.image_count") == "3");
-    assert(complete[0].metadata.at("burst.images.0.side") == "A");
-    assert(complete[1].metadata.at("burst.images.0.side") == "B");
-    assert(complete[0].metadata.at("burst.images.0.trigger_hw_ns").size() > 0);
-    assert(complete[0].metadata.at("burst.images.0.encoder_position") == "500");
+    REQUIRE(complete.size() == 2);
+    REQUIRE(complete[0].camera_id == 1);
+    REQUIRE(complete[1].camera_id == 2);
+    REQUIRE(complete[0].metadata.at("burst.image_count") == "3");
+    REQUIRE(complete[1].metadata.at("burst.image_count") == "3");
+    REQUIRE(complete[0].metadata.at("burst.images.0.side") == "A");
+    REQUIRE(complete[1].metadata.at("burst.images.0.side") == "B");
+    REQUIRE(complete[0].metadata.at("burst.images.0.trigger_hw_ns").size() > 0);
+    REQUIRE(complete[0].metadata.at("burst.images.0.encoder_position") == "500");
 }
 
 void test_sort_reorder_buffer_releases_results_by_bag_order() {
@@ -565,14 +673,135 @@ void test_sort_reorder_buffer_releases_results_by_bag_order() {
 
     auto r2 = waterbag::make_fail_safe_bag_result(p2, "synthetic_ng_2", false);
     reorder.store_result(r2);
-    assert(reorder.collect_ready().empty());
+    REQUIRE(reorder.collect_ready().empty());
 
     auto r1 = waterbag::make_fail_safe_bag_result(p1, "synthetic_ng_1", false);
     reorder.store_result(r1);
     auto ready = reorder.collect_ready();
-    assert(ready.size() == 2);
-    assert(ready[0].frame_packet.bag_id == p1.bag_id);
-    assert(ready[1].frame_packet.bag_id == p2.bag_id);
+    REQUIRE(ready.size() == 2);
+    REQUIRE(ready[0].frame_packet.bag_id == p1.bag_id);
+    REQUIRE(ready[1].frame_packet.bag_id == p2.bag_id);
+}
+
+void test_line_safety_latches_fault_once_and_persists_fault_event() {
+    auto plc = std::make_shared<CountingPlcController>();
+    auto sink = std::make_shared<InMemoryResultSink>();
+    waterbag::LineSafetyController safety(plc, sink);
+
+    waterbag::RuntimeFault first;
+    first.code = waterbag::RuntimeFaultCode::StationQueueSaturated;
+    first.source = "test";
+    first.detail = "first";
+    first.frame_id = "frame-1";
+    first.bag_id = "bag-1";
+
+    waterbag::RuntimeFault second = first;
+    second.detail = "second";
+
+    REQUIRE(safety.trip(first));
+    REQUIRE(!safety.trip(second));
+    REQUIRE(safety.fault_latched());
+    REQUIRE(plc->line_stop_count == 1);
+    const auto results = sink->snapshot();
+    REQUIRE(results.size() == 1);
+    REQUIRE(results[0].runtime_fault.has_value());
+    REQUIRE(results[0].runtime_fault->code == waterbag::RuntimeFaultCode::StationQueueSaturated);
+    const auto json = waterbag::inspection_result_to_json(results[0]);
+    REQUIRE(json.find("\"event_type\":\"runtime_fault\"") != std::string::npos);
+    REQUIRE(json.find("\"status\":\"fault\"") != std::string::npos);
+}
+
+void test_line_safety_heartbeat_threshold_latches_plc_fault() {
+    auto plc = std::make_shared<CountingPlcController>();
+    plc->heartbeat_ok = false;
+    auto sink = std::make_shared<InMemoryResultSink>();
+    waterbag::LineSafetyOptions options;
+    options.heartbeat_interval = waterbag::Milliseconds{5};
+    options.heartbeat_failure_threshold = 3;
+    waterbag::LineSafetyController safety(plc, sink, options);
+
+    safety.start();
+    const auto deadline = waterbag::Clock::now() + waterbag::Milliseconds{200};
+    while (!safety.fault_latched() && waterbag::Clock::now() < deadline) {
+        std::this_thread::sleep_for(waterbag::Milliseconds{5});
+    }
+    safety.stop();
+
+    REQUIRE(safety.fault_latched());
+    REQUIRE(plc->heartbeat_count >= 3);
+    REQUIRE(plc->line_stop_count == 1);
+    REQUIRE(safety.first_fault()->code == waterbag::RuntimeFaultCode::PlcCommunicationLost);
+}
+
+void test_jsonl_storage_throws_on_failed_write() {
+    waterbag::JsonlResultRepository repo("/dev/full");
+    waterbag::RuntimeFault fault;
+    fault.code = waterbag::RuntimeFaultCode::ResultStorageFailed;
+    fault.source = "test";
+    fault.detail = "write failure";
+
+    bool threw = false;
+    try {
+        repo.save(waterbag::make_runtime_fault_result(fault));
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    REQUIRE(threw);
+}
+
+void test_runtime_station_queue_saturation_latches_fault_without_dropping_oldest() {
+    auto plc = std::make_shared<CountingPlcController>();
+    auto sink = std::make_shared<InMemoryResultSink>();
+    auto safety = std::make_shared<waterbag::LineSafetyController>(plc, sink);
+    waterbag::RuntimeConfig config;
+    config.queue_capacity = 1;
+    config.defect_worker_count = 1;
+    config.input_mode = "watch_dir";
+    config.cameras = {waterbag::CameraConfig{1, "A-camera", "camera1"}};
+    auto runtime = waterbag::RealtimeRuntime(config, make_pipeline(), safety);
+    const auto root = std::filesystem::temp_directory_path() / "waterbag_cpp_tests";
+
+    runtime.submit_path(1, make_file(root / "bag_700_cam1_good.jpg"));
+    runtime.submit_path(1, make_file(root / "bag_701_cam1_good.jpg"));
+    runtime.submit_path(1, make_file(root / "bag_702_cam1_good.jpg"));
+
+    REQUIRE(safety->fault_latched());
+    REQUIRE(plc->line_stop_count == 1);
+    const auto results = sink->snapshot();
+    REQUIRE(results.size() == 1);
+    REQUIRE(results[0].runtime_fault->code == waterbag::RuntimeFaultCode::StationQueueSaturated);
+}
+
+void test_runtime_listener_exception_latches_storage_fault() {
+    auto plc = std::make_shared<CountingPlcController>();
+    auto sink = std::make_shared<InMemoryResultSink>();
+    auto safety = std::make_shared<waterbag::LineSafetyController>(plc, sink);
+    waterbag::RuntimeConfig config;
+    config.queue_capacity = 8;
+    config.defect_worker_count = 1;
+    config.input_mode = "watch_dir";
+    config.poll_interval = waterbag::Milliseconds{5};
+    config.file_stable_for = waterbag::Milliseconds{1};
+    config.file_ready_timeout = waterbag::Milliseconds{200};
+    config.cooldown = waterbag::Milliseconds{1};
+    config.heartbeat_interval = waterbag::Milliseconds{20};
+    config.cameras = {waterbag::CameraConfig{1, "A-camera", "camera1"}};
+    waterbag::RealtimeRuntime runtime(config, make_pipeline(), safety);
+    runtime.add_listener([](const waterbag::InspectionResult&) {
+        throw std::runtime_error("listener disk failed");
+    });
+
+    runtime.start();
+    runtime.submit_path(1, make_file(std::filesystem::temp_directory_path() / "waterbag_cpp_tests" / "bag_710_cam1_good.jpg"));
+    const auto deadline = waterbag::Clock::now() + waterbag::Milliseconds{500};
+    while (!safety->fault_latched() && waterbag::Clock::now() < deadline) {
+        std::this_thread::sleep_for(waterbag::Milliseconds{10});
+    }
+    runtime.stop();
+
+    REQUIRE(safety->fault_latched());
+    REQUIRE(plc->line_stop_count == 1);
+    REQUIRE(safety->first_fault()->code == waterbag::RuntimeFaultCode::ResultStorageFailed);
 }
 
 waterbag::PlcConfig make_modbus_test_config(int port) {
@@ -588,6 +817,11 @@ waterbag::PlcConfig make_modbus_test_config(int port) {
     config.modbus_tcp.write_timeout = waterbag::Milliseconds{100};
     config.modbus_tcp.ack_timeout = waterbag::Milliseconds{200};
     config.modbus_tcp.ack_poll_interval = waterbag::Milliseconds{1};
+    config.presence_checkpoint_path =
+        std::filesystem::temp_directory_path() /
+        "waterbag_cpp_tests" /
+        ("presence_checkpoint_" + std::to_string(port) + ".txt");
+    std::filesystem::remove(config.presence_checkpoint_path);
     return config;
 }
 
@@ -601,10 +835,10 @@ void test_modbus_tcp_presence_false() {
     auto packet = waterbag::make_synthetic_frame_packet(camera, "plc_presence_camera1");
 
     const auto presence = plc.read_laser_presence(packet);
-    assert(!presence.bag_present);
-    assert(presence.message_valid);
-    assert(presence.message_id == "modbus-7");
-    assert(presence.detail == "modbus_tcp_laser_clear");
+    REQUIRE(!presence.bag_present);
+    REQUIRE(presence.message_valid);
+    REQUIRE(presence.message_id == "modbus-7");
+    REQUIRE(presence.detail == "modbus_tcp_laser_clear");
 }
 
 void test_modbus_tcp_presence_bag_id_and_commands() {
@@ -618,39 +852,49 @@ void test_modbus_tcp_presence_bag_id_and_commands() {
     auto packet = waterbag::make_synthetic_frame_packet(camera, "plc_presence_camera1");
 
     const auto presence = plc.read_laser_presence(packet);
-    assert(presence.bag_present);
-    assert(presence.message_valid);
-    assert(presence.bag_id == "1234");
+    REQUIRE(presence.bag_present);
+    REQUIRE(presence.message_valid);
+    REQUIRE(presence.bag_id == "1234");
     const auto duplicate = plc.read_laser_presence(packet);
-    assert(!duplicate.bag_present);
-    assert(duplicate.detail == "modbus_tcp_duplicate_presence_ignored");
+    REQUIRE(!duplicate.bag_present);
+    REQUIRE(duplicate.detail == "modbus_tcp_duplicate_presence_ignored");
 
     packet.bag_id = presence.bag_id;
     auto session = waterbag::make_capture_session(packet);
     const auto plan = waterbag::make_production_burst_plan();
     const auto burst_ack = plc.start_light_burst(session, plan);
-    assert(burst_ack.success);
-    assert(burst_ack.detail == "modbus_tcp_ack_success");
-    assert(server.holding_register(1) == 0);
-    assert(server.holding_register(2) == 1234);
-    assert(server.holding_register(6) == 3);
-    assert(server.holding_register(20) == 1);
-    assert(server.holding_register(21) == 100);
-    assert(plc.read_burst_events(session.capture_session_id).size() == plan.frames.size());
+    REQUIRE(burst_ack.success);
+    REQUIRE(burst_ack.detail == "modbus_tcp_ack_success");
+    REQUIRE(server.holding_register(1) == 0);
+    REQUIRE(server.holding_register(2) == 1234);
+    REQUIRE(server.holding_register(6) == 3);
+    REQUIRE(server.holding_register(20) == 1);
+    REQUIRE(server.holding_register(21) == 100);
+    REQUIRE(plc.read_burst_events(session.capture_session_id).size() == plan.frames.size());
 
     const auto station_feedbacks = plc.release_station_after_capture(session);
-    assert(station_feedbacks.size() == 4);
+    REQUIRE(station_feedbacks.size() == 4);
     for (const auto& feedback : station_feedbacks) {
-        assert(feedback.success);
-        assert(feedback.detail == "modbus_tcp_ack_success");
+        REQUIRE(feedback.success);
+        REQUIRE(feedback.detail == "modbus_tcp_ack_success");
     }
 
     const auto ok_feedback = plc.route_to_ok_bin(packet);
-    assert(ok_feedback.success);
-    assert(server.holding_register(5) == 20);
+    REQUIRE(ok_feedback.success);
+    REQUIRE(server.holding_register(5) == 20);
     const auto ng_feedback = plc.route_to_ng_bin(packet);
-    assert(ng_feedback.success);
-    assert(server.holding_register(5) == 21);
+    REQUIRE(ng_feedback.success);
+    REQUIRE(server.holding_register(5) == 21);
+
+    REQUIRE(plc.send_heartbeat());
+    waterbag::RuntimeFault fault;
+    fault.code = waterbag::RuntimeFaultCode::ThreadException;
+    fault.source = "test";
+    fault.detail = "stop";
+    fault.bag_id = packet.bag_id;
+    const auto stop_feedback = plc.request_line_stop(fault);
+    REQUIRE(stop_feedback.success);
+    REQUIRE(server.holding_register(5) == 30);
 }
 
 void test_modbus_tcp_hardware_check() {
@@ -660,64 +904,162 @@ void test_modbus_tcp_hardware_check() {
 
     waterbag::ModbusTcpPlcController plc(make_modbus_test_config(server.port()));
     const auto result = plc.check_hardware();
-    assert(result.success);
-    assert(!result.details.empty());
+    REQUIRE(result.success);
+    REQUIRE(!result.details.empty());
+}
+
+void test_modbus_tcp_hardware_check_fails_on_fault_register() {
+    FakeModbusTcpServer server;
+    server.set_fault_code(9);
+
+    waterbag::ModbusTcpPlcController plc(make_modbus_test_config(server.port()));
+    const auto result = plc.check_hardware();
+    REQUIRE(!result.success);
+}
+
+void test_modbus_tcp_presence_checkpoint_survives_restart_and_faults_on_regression() {
+    FakeModbusTcpServer server;
+    server.set_presence(true);
+    server.set_message_id(100);
+    server.set_bag_id(5000);
+
+    auto config = make_modbus_test_config(server.port());
+    {
+        waterbag::ModbusTcpPlcController plc(config);
+        waterbag::CameraConfig camera{1, "A-camera", "camera1"};
+        auto packet = waterbag::make_synthetic_frame_packet(camera, "plc_presence_camera1");
+        const auto presence = plc.read_laser_presence(packet);
+        REQUIRE(presence.bag_present);
+        REQUIRE(presence.message_valid);
+    }
+
+    {
+        waterbag::ModbusTcpPlcController plc(config);
+        waterbag::CameraConfig camera{1, "A-camera", "camera1"};
+        auto packet = waterbag::make_synthetic_frame_packet(camera, "plc_presence_camera1");
+        const auto duplicate = plc.read_laser_presence(packet);
+        REQUIRE(!duplicate.bag_present);
+        REQUIRE(duplicate.message_valid);
+        REQUIRE(duplicate.detail == "modbus_tcp_duplicate_presence_ignored");
+
+        server.set_message_id(101);
+        server.set_bag_id(5000);
+        const auto regression = plc.read_laser_presence(packet);
+        REQUIRE(!regression.message_valid);
+        REQUIRE(regression.detail.find("bag_id_regression") != std::string::npos);
+    }
 }
 
 void test_config_loads_presence_settings() {
     const auto config = waterbag::load_app_config("config/cpp_backend/demo.ini");
-    assert(config.runtime.input_mode == "watch_dir");
-    assert(config.runtime.camera_backend == "mock");
-    assert(config.runtime.plc_backend == "mock");
-    assert(config.detection.presence_enabled);
-    assert(config.detection.advance_on_presence);
-    assert(config.detection.advance_trigger_camera_id == 0);
-    assert(config.plc.presence_message_timeout == waterbag::Milliseconds{200});
-    assert(config.runtime.defect_worker_count == 4);
-    assert(config.runtime.expected_burst_images_per_camera == 3);
-    assert(config.runtime.bag_capture_timeout == waterbag::Milliseconds{1500});
-    assert(config.runtime.sort_result_timeout == waterbag::Milliseconds{1500});
-    assert(config.storage.async_result_writes);
-    assert(config.storage.result_queue_capacity == 512);
-    assert(config.storage.drop_results_when_full);
-    assert(config.camera_driver.backend == "mock");
-    assert(config.camera_driver.default_trigger_source == "Line0");
-    assert(config.camera_driver.enable_chunk_timestamp);
-    assert(config.runtime.cameras.size() == 2);
+    REQUIRE(config.runtime.input_mode == "watch_dir");
+    REQUIRE(config.runtime.camera_backend == "mock");
+    REQUIRE(config.runtime.plc_backend == "mock");
+    REQUIRE(config.detection.presence_enabled);
+    REQUIRE(config.detection.advance_on_presence);
+    REQUIRE(config.detection.advance_trigger_camera_id == 0);
+    REQUIRE(config.plc.presence_message_timeout == waterbag::Milliseconds{200});
+    REQUIRE(config.runtime.defect_worker_count == 4);
+    REQUIRE(config.runtime.expected_burst_images_per_camera == 3);
+    REQUIRE(config.runtime.bag_capture_timeout == waterbag::Milliseconds{1500});
+    REQUIRE(config.runtime.sort_result_timeout == waterbag::Milliseconds{1500});
+    REQUIRE(config.storage.async_result_writes);
+    REQUIRE(config.storage.result_queue_capacity == 512);
+    REQUIRE(!config.storage.drop_results_when_full);
+    REQUIRE(config.camera_driver.backend == "mock");
+    REQUIRE(config.camera_driver.default_trigger_source == "Line0");
+    REQUIRE(config.camera_driver.enable_chunk_timestamp);
+    REQUIRE(config.runtime.cameras.size() == 2);
 }
 
 void test_config_loads_hardware_modbus_settings() {
     const auto config = waterbag::load_app_config("config/cpp_backend/hardware_hik_mvs_modbus.ini");
-    assert(config.runtime.input_mode == "plc_presence");
-    assert(!config.runtime.publish_no_bag_results);
-    assert(config.camera_driver.backend == "hikvision_mvs");
-    assert(config.plc.backend == "modbus_tcp");
-    assert(config.plc.modbus_tcp.host == "192.168.1.50");
-    assert(config.plc.modbus_tcp.port == 502);
-    assert(config.plc.modbus_tcp.coil_start_burst == 0);
-    assert(config.plc.modbus_tcp.holding_register_burst_frame_count == 6);
-    assert(config.runtime.camera_backend == "hikvision_mvs");
-    assert(config.runtime.plc_backend == "modbus_tcp");
+    REQUIRE(config.runtime.input_mode == "plc_presence");
+    REQUIRE(!config.runtime.publish_no_bag_results);
+    REQUIRE(config.camera_driver.backend == "hikvision_mvs");
+    REQUIRE(config.plc.backend == "modbus_tcp");
+    REQUIRE(config.plc.modbus_tcp.host == "192.168.1.50");
+    REQUIRE(config.plc.modbus_tcp.port == 502);
+    REQUIRE(config.plc.modbus_tcp.coil_start_burst == 0);
+    REQUIRE(config.plc.modbus_tcp.coil_line_stop == 21);
+    REQUIRE(config.plc.modbus_tcp.holding_register_burst_frame_count == 6);
+    REQUIRE(config.runtime.camera_backend == "hikvision_mvs");
+    REQUIRE(config.runtime.plc_backend == "modbus_tcp");
+}
+
+void test_config_validation_reports_all_startup_errors() {
+    waterbag::AppConfig config;
+    config.runtime.queue_capacity = 0;
+    config.runtime.defect_worker_count = 0;
+    config.runtime.input_mode = "plc_presence";
+    config.runtime.cameras = {
+        waterbag::CameraConfig{1, "A", "a"},
+        waterbag::CameraConfig{1, "B", "b"},
+    };
+    config.correlation.expected_camera_ids = {1, 2};
+    config.detection.primary_conf_threshold = 1.5;
+    config.plc.backend = "mock";
+    config.plc.modbus_tcp.coil_line_stop = -1;
+
+    const auto errors = waterbag::validate_app_config(config);
+    REQUIRE(errors.size() >= 6);
+    const auto joined = [&] {
+        std::string value;
+        for (const auto& error : errors) {
+            value += error + "\n";
+        }
+        return value;
+    }();
+    REQUIRE(joined.find("queue_capacity") != std::string::npos);
+    REQUIRE(joined.find("defect_worker_count") != std::string::npos);
+    REQUIRE(joined.find("camera id must be unique") != std::string::npos);
+    REQUIRE(joined.find("primary_conf_threshold") != std::string::npos);
+    REQUIRE(joined.find("plc.backend=modbus_tcp") != std::string::npos);
+    REQUIRE(joined.find("coil_line_stop") != std::string::npos);
 }
 
 }  // namespace
 
 int main() {
-    test_presence_gate_skips_empty_frame();
-    test_plc_laser_presence_message_drives_gate();
-    test_plc_laser_presence_timeout_is_reported();
-    test_presence_triggers_lever_actions_before_defect_decision();
-    test_jsonl_storage_contains_presence_fields();
-    test_jsonl_storage_can_write_asynchronously();
-    test_burst_alignment_uses_unified_hardware_clock();
-    test_station_packet_exports_burst_images_for_defect_worker();
-    test_defect_detection_fuses_multi_light_burst_inputs();
-    test_bag_capture_assembler_waits_for_six_images();
-    test_sort_reorder_buffer_releases_results_by_bag_order();
-    test_modbus_tcp_presence_false();
-    test_modbus_tcp_presence_bag_id_and_commands();
-    test_modbus_tcp_hardware_check();
-    test_config_loads_presence_settings();
-    test_config_loads_hardware_modbus_settings();
+    const std::vector<std::pair<std::string, void (*)()>> tests = {
+        {"presence gate skips empty frame", test_presence_gate_skips_empty_frame},
+        {"plc laser presence message drives gate", test_plc_laser_presence_message_drives_gate},
+        {"plc laser presence timeout is reported", test_plc_laser_presence_timeout_is_reported},
+        {"presence triggers lever actions before defect decision", test_presence_triggers_lever_actions_before_defect_decision},
+        {"jsonl storage contains presence fields", test_jsonl_storage_contains_presence_fields},
+        {"jsonl storage can write asynchronously", test_jsonl_storage_can_write_asynchronously},
+        {"burst alignment uses unified hardware clock", test_burst_alignment_uses_unified_hardware_clock},
+        {"station packet exports burst images for defect worker", test_station_packet_exports_burst_images_for_defect_worker},
+        {"defect detection fuses multi light burst inputs", test_defect_detection_fuses_multi_light_burst_inputs},
+        {"bag capture assembler waits for six images", test_bag_capture_assembler_waits_for_six_images},
+        {"sort reorder buffer releases results by bag order", test_sort_reorder_buffer_releases_results_by_bag_order},
+        {"line safety latches fault once and persists fault event", test_line_safety_latches_fault_once_and_persists_fault_event},
+        {"line safety heartbeat threshold latches plc fault", test_line_safety_heartbeat_threshold_latches_plc_fault},
+        {"jsonl storage throws on failed write", test_jsonl_storage_throws_on_failed_write},
+        {"runtime station queue saturation latches fault without dropping oldest", test_runtime_station_queue_saturation_latches_fault_without_dropping_oldest},
+        {"runtime listener exception latches storage fault", test_runtime_listener_exception_latches_storage_fault},
+        {"modbus tcp presence false", test_modbus_tcp_presence_false},
+        {"modbus tcp presence bag id and commands", test_modbus_tcp_presence_bag_id_and_commands},
+        {"modbus tcp hardware check", test_modbus_tcp_hardware_check},
+        {"modbus tcp hardware check fails on fault register", test_modbus_tcp_hardware_check_fails_on_fault_register},
+        {"modbus tcp presence checkpoint survives restart and faults on regression", test_modbus_tcp_presence_checkpoint_survives_restart_and_faults_on_regression},
+        {"config loads presence settings", test_config_loads_presence_settings},
+        {"config loads hardware modbus settings", test_config_loads_hardware_modbus_settings},
+        {"config validation reports all startup errors", test_config_validation_reports_all_startup_errors},
+    };
+
+    for (const auto& [name, test] : tests) {
+        std::cout << "[test] " << name << "\n";
+        try {
+            test();
+        } catch (const std::exception& error) {
+            std::cerr << "[failed] " << name << ": " << error.what() << "\n";
+            return 1;
+        } catch (...) {
+            std::cerr << "[failed] " << name << ": unknown exception\n";
+            return 1;
+        }
+    }
+    std::cout << "[tests] " << tests.size() << " passed\n";
     return 0;
 }

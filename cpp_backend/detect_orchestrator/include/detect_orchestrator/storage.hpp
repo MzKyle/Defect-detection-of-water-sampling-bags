@@ -6,6 +6,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -14,7 +15,14 @@
 
 namespace waterbag {
 
-class JsonlResultRepository {
+class IResultSink {
+public:
+    virtual ~IResultSink() = default;
+    virtual void save(const InspectionResult& result) = 0;
+    virtual void close() = 0;
+};
+
+class JsonlResultRepository final : public IResultSink {
 public:
     explicit JsonlResultRepository(
         std::filesystem::path path,
@@ -23,8 +31,8 @@ public:
         bool drop_when_full = true);
     ~JsonlResultRepository();
 
-    void save(const InspectionResult& result);
-    void close();
+    void save(const InspectionResult& result) override;
+    void close() override;
     const std::filesystem::path& path() const;
     std::size_t dropped_results() const;
 
@@ -43,6 +51,7 @@ private:
     std::mutex file_mutex_;
     std::condition_variable cv_;
     std::thread writer_thread_;
+    std::optional<std::string> writer_error_;
 };
 
 std::string inspection_result_to_json(const InspectionResult& result);

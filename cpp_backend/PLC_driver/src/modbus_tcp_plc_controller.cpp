@@ -4,7 +4,9 @@
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <filesystem>
 #include <fcntl.h>
+#include <fstream>
 #include <netdb.h>
 #include <sstream>
 #include <stdexcept>
@@ -105,6 +107,9 @@ int action_code(const std::string& action) {
     if (action == "route_to_ng_bin") {
         return 21;
     }
+    if (action == "request_line_stop") {
+        return 30;
+    }
     return 0;
 }
 
@@ -126,6 +131,9 @@ int coil_for_action(const ModbusTcpConfig& config, const std::string& action) {
     }
     if (action == "route_to_ng_bin") {
         return config.coil_sort_ng;
+    }
+    if (action == "request_line_stop") {
+        return config.coil_line_stop;
     }
     return -1;
 }
@@ -469,7 +477,15 @@ private:
 
 ModbusTcpPlcController::ModbusTcpPlcController(PlcConfig config)
     : config_(std::move(config)),
-      reliable_(config_, std::make_unique<ModbusTcpPlcTransport>(config_)) {}
+      reliable_(config_, std::make_unique<ModbusTcpPlcTransport>(config_)) {
+    try {
+        load_presence_checkpoint();
+    } catch (const std::exception& error) {
+        checkpoint_load_error_ = error.what();
+    } catch (...) {
+        checkpoint_load_error_ = "unknown checkpoint load error";
+    }
+}
 
 std::string ModbusTcpPlcController::backend_name() const {
     return "modbus_tcp";
@@ -493,7 +509,12 @@ HardwareCheckResult ModbusTcpPlcController::check_hardware() {
         }
         if (config_.modbus_tcp.input_register_fault_code >= 0) {
             const auto values = client.read_input_registers(config_.modbus_tcp.input_register_fault_code, 1);
-            result.details.push_back("fault_code_register=" + std::to_string(values.empty() ? 0 : values[0]));
+            const auto fault_code = values.empty() ? 0 : values[0];
+            result.details.push_back("fault_code_register=" + std::to_string(fault_code));
+            if (fault_code != 0) {
+                result.success = false;
+                result.details.push_back("plc_fault_latched_before_start");
+            }
         }
         if (config_.modbus_tcp.coil_heartbeat >= 0) {
             client.write_single_coil(config_.modbus_tcp.coil_heartbeat, true);
@@ -560,7 +581,9 @@ PlcLaserPresence ModbusTcpPlcController::read_laser_presence(const FramePacket& 
                 signal.bag_present = false;
                 signal.detail = "modbus_tcp_duplicate_presence_ignored";
             } else {
-                last_presence_key_by_camera_[packet.camera_id] = key;
+                if (validate_and_checkpoint_presence(signal)) {
+                    last_presence_key_by_camera_[packet.camera_id] = key;
+                }
             }
         }
     } catch (const std::exception& error) {
@@ -575,6 +598,7 @@ PlcLaserPresence ModbusTcpPlcController::read_laser_presence(const FramePacket& 
 }
 
 PlcAck ModbusTcpPlcController::start_light_burst(const CaptureSession& session, const BurstPlan& plan) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
     try {
         write_burst_plan(session, plan);
         const auto feedback = execute_semantic_command(session.packet, "light_burst_controller", "start_light_burst");
@@ -588,6 +612,7 @@ PlcAck ModbusTcpPlcController::start_light_burst(const CaptureSession& session, 
 }
 
 std::vector<PlcBurstEvent> ModbusTcpPlcController::read_burst_events(const std::string& capture_session_id) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
     const auto found = burst_events_.find(capture_session_id);
     if (found == burst_events_.end()) {
         return {};
@@ -596,6 +621,7 @@ std::vector<PlcBurstEvent> ModbusTcpPlcController::read_burst_events(const std::
 }
 
 std::vector<ExecutionFeedback> ModbusTcpPlcController::release_station_after_capture(const CaptureSession& session) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
     const auto& packet = session.packet;
     const auto station = "camera" + std::to_string(session.camera_id);
     std::vector<ExecutionFeedback> feedbacks;
@@ -607,11 +633,42 @@ std::vector<ExecutionFeedback> ModbusTcpPlcController::release_station_after_cap
 }
 
 ExecutionFeedback ModbusTcpPlcController::route_to_ok_bin(const FramePacket& packet) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
     return execute_semantic_command(packet, "end_sorter", "route_to_ok_bin");
 }
 
 ExecutionFeedback ModbusTcpPlcController::route_to_ng_bin(const FramePacket& packet) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
     return execute_semantic_command(packet, "end_sorter", "route_to_ng_bin");
+}
+
+bool ModbusTcpPlcController::send_heartbeat() {
+    if (!config_.enabled) {
+        return true;
+    }
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    try {
+        ModbusTcpClient client(config_.modbus_tcp);
+        client.write_single_coil(config_.modbus_tcp.coil_heartbeat, true);
+        client.write_single_coil(config_.modbus_tcp.coil_heartbeat, false);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+ExecutionFeedback ModbusTcpPlcController::request_line_stop(const RuntimeFault& fault) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    FramePacket packet;
+    packet.frame_id = fault.frame_id.value_or("runtime-fault");
+    packet.bag_id = fault.bag_id.value_or("");
+    packet.source = "line_safety";
+    packet.source_name = fault.source;
+    auto feedback = execute_semantic_command(packet, "line_safety", "request_line_stop");
+    if (!feedback.success && feedback.detail.find("line_stop_unconfirmed") == std::string::npos) {
+        feedback.detail = "line_stop_unconfirmed:" + feedback.detail;
+    }
+    return feedback;
 }
 
 ExecutionFeedback ModbusTcpPlcController::execute_semantic_command(
@@ -680,6 +737,116 @@ void ModbusTcpPlcController::store_planned_burst_events(const CaptureSession& se
         events.push_back(event);
     }
     burst_events_[session.capture_session_id] = std::move(events);
+}
+
+void ModbusTcpPlcController::load_presence_checkpoint() {
+    if (config_.presence_checkpoint_path.empty()) {
+        return;
+    }
+    if (!std::filesystem::exists(config_.presence_checkpoint_path)) {
+        return;
+    }
+    std::ifstream input(config_.presence_checkpoint_path);
+    if (!input) {
+        throw std::runtime_error("checkpoint_failed:cannot_open:" + config_.presence_checkpoint_path.string());
+    }
+    std::string line;
+    int line_number = 0;
+    while (std::getline(input, line)) {
+        ++line_number;
+        if (line.empty()) {
+            continue;
+        }
+        std::stringstream stream(line);
+        std::string camera_text;
+        std::string message_id;
+        std::string bag_text;
+        if (!std::getline(stream, camera_text, ',') ||
+            !std::getline(stream, message_id, ',') ||
+            !std::getline(stream, bag_text, ',')) {
+            throw std::runtime_error("checkpoint_failed:invalid_line:" + std::to_string(line_number));
+        }
+        PresenceCheckpoint checkpoint;
+        checkpoint.message_id = message_id;
+        checkpoint.bag_id = std::stoull(bag_text);
+        checkpoint_by_camera_[std::stoi(camera_text)] = checkpoint;
+    }
+}
+
+void ModbusTcpPlcController::persist_presence_checkpoint() {
+    if (config_.presence_checkpoint_path.empty()) {
+        throw std::runtime_error("checkpoint_failed:path_missing");
+    }
+    const auto parent = config_.presence_checkpoint_path.parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent);
+    }
+    const auto temp_path = config_.presence_checkpoint_path.string() + ".tmp";
+    {
+        std::ofstream out(temp_path, std::ios::trunc);
+        if (!out) {
+            throw std::runtime_error("checkpoint_failed:cannot_open_temp:" + temp_path);
+        }
+        for (const auto& [camera_id, checkpoint] : checkpoint_by_camera_) {
+            out << camera_id << "," << checkpoint.message_id << "," << checkpoint.bag_id << "\n";
+        }
+        out.flush();
+        if (!out) {
+            throw std::runtime_error("checkpoint_failed:cannot_write_temp:" + temp_path);
+        }
+    }
+    std::filesystem::rename(temp_path, config_.presence_checkpoint_path);
+}
+
+bool ModbusTcpPlcController::validate_and_checkpoint_presence(PlcLaserPresence& signal) {
+    if (!checkpoint_load_error_.empty()) {
+        signal.message_valid = false;
+        signal.bag_present = false;
+        signal.detail = "checkpoint_failed:" + checkpoint_load_error_;
+        return false;
+    }
+    if (signal.bag_id.empty()) {
+        signal.message_valid = false;
+        signal.bag_present = false;
+        signal.detail = "bag_id_missing:modbus_presence_requires_bag_id";
+        return false;
+    }
+    std::uint64_t bag_value = 0;
+    try {
+        bag_value = std::stoull(signal.bag_id);
+    } catch (...) {
+        signal.message_valid = false;
+        signal.bag_present = false;
+        signal.detail = "bag_id_missing:non_numeric_bag_id";
+        return false;
+    }
+
+    const auto found = checkpoint_by_camera_.find(signal.camera_id);
+    if (found != checkpoint_by_camera_.end()) {
+        const auto& checkpoint = found->second;
+        if (checkpoint.message_id == signal.message_id && checkpoint.bag_id == bag_value) {
+            signal.bag_present = false;
+            signal.detail = "modbus_tcp_duplicate_presence_ignored";
+            return false;
+        }
+        if (bag_value <= checkpoint.bag_id) {
+            signal.message_valid = false;
+            signal.bag_present = false;
+            signal.detail = "bag_id_regression:last=" + std::to_string(checkpoint.bag_id) + ":current=" + signal.bag_id;
+            return false;
+        }
+    }
+
+    checkpoint_by_camera_[signal.camera_id] = PresenceCheckpoint{signal.message_id, bag_value};
+    try {
+        persist_presence_checkpoint();
+    } catch (const std::exception& error) {
+        signal.message_valid = false;
+        signal.bag_present = false;
+        signal.detail = error.what();
+        return false;
+    }
+    return true;
 }
 
 }  // namespace waterbag

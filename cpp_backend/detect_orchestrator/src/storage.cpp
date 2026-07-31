@@ -1,8 +1,10 @@
 #include "detect_orchestrator/storage.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
 namespace waterbag {
 namespace {
@@ -137,6 +139,7 @@ JsonlResultRepository::JsonlResultRepository(
       async_writes_(async_writes),
       queue_capacity_(std::max<std::size_t>(1, queue_capacity)),
       drop_when_full_(drop_when_full) {
+    (void)drop_when_full_;
     if (!path_.parent_path().empty()) {
         std::filesystem::create_directories(path_.parent_path());
     }
@@ -157,23 +160,25 @@ void JsonlResultRepository::save(const InspectionResult& result) {
     }
 
     std::unique_lock<std::mutex> lock(queue_mutex_);
+    if (writer_error_) {
+        throw std::runtime_error("result writer failed: " + *writer_error_);
+    }
     if (stop_requested_) {
         lock.unlock();
         append_line(line);
         return;
     }
-    if (drop_when_full_) {
-        if (queue_.size() >= queue_capacity_) {
-            queue_.pop_front();
-            ++dropped_results_;
-        }
-    } else {
-        cv_.wait(lock, [&] {
-            return stop_requested_ || queue_.size() < queue_capacity_;
-        });
-        if (stop_requested_) {
-            return;
-        }
+    const bool has_space = cv_.wait_for(lock, Milliseconds{500}, [&] {
+        return stop_requested_ || writer_error_ || queue_.size() < queue_capacity_;
+    });
+    if (writer_error_) {
+        throw std::runtime_error("result writer failed: " + *writer_error_);
+    }
+    if (!has_space || queue_.size() >= queue_capacity_) {
+        throw std::runtime_error("result queue full for more than 500 ms: " + path_.string());
+    }
+    if (stop_requested_) {
+        throw std::runtime_error("result writer is closing: " + path_.string());
     }
     queue_.push_back(std::move(line));
     lock.unlock();
@@ -205,7 +210,14 @@ std::size_t JsonlResultRepository::dropped_results() const {
 void JsonlResultRepository::append_line(const std::string& line) {
     std::lock_guard<std::mutex> lock(file_mutex_);
     std::ofstream out(path_, std::ios::app);
+    if (!out) {
+        throw std::runtime_error("failed to open result JSONL: " + path_.string());
+    }
     out << line << '\n';
+    out.flush();
+    if (!out) {
+        throw std::runtime_error("failed to write result JSONL: " + path_.string());
+    }
 }
 
 void JsonlResultRepository::writer_loop() {
@@ -223,7 +235,25 @@ void JsonlResultRepository::writer_loop() {
             queue_.pop_front();
         }
         cv_.notify_all();
-        append_line(line);
+        try {
+            append_line(line);
+        } catch (const std::exception& error) {
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex_);
+                writer_error_ = error.what();
+                stop_requested_ = true;
+            }
+            cv_.notify_all();
+            break;
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex_);
+                writer_error_ = "unknown result writer failure";
+                stop_requested_ = true;
+            }
+            cv_.notify_all();
+            break;
+        }
     }
 }
 
@@ -242,6 +272,8 @@ std::string inspection_result_to_json(const InspectionResult& result) {
     }
 
     out << "{";
+    out << "\"schema_version\":1,";
+    write_string(out, "event_type", result.runtime_fault ? "runtime_fault" : "inspection");
     write_string(out, "timestamp", system_time_to_iso(result.frame_packet.received_at));
     write_string(out, "frame_id", result.frame_packet.frame_id);
     write_string(out, "bag_id", result.frame_packet.bag_id);
@@ -294,6 +326,13 @@ std::string inspection_result_to_json(const InspectionResult& result) {
     write_feedbacks(out, result.execution_feedbacks);
     out << ",";
     write_string_array(out, "state_trace", result.state_trace, false);
+    if (result.runtime_fault) {
+        out << ",";
+        write_string(out, "fault_code", to_string(result.runtime_fault->code));
+        write_string(out, "fault_source", result.runtime_fault->source);
+        write_string(out, "fault_detail", result.runtime_fault->detail);
+        write_bool(out, "line_stop_confirmed", result.runtime_fault->line_stop_confirmed, false);
+    }
     out << "}";
     return out.str();
 }

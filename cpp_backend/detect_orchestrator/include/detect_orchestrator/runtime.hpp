@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "detect_orchestrator/bag_runtime.hpp"
+#include "detect_orchestrator/line_safety.hpp"
 #include "detect_orchestrator/pipeline.hpp"
 
 namespace waterbag {
@@ -19,7 +20,10 @@ class RealtimeRuntime {
 public:
     using Listener = std::function<void(const InspectionResult&)>;
 
-    RealtimeRuntime(RuntimeConfig config, std::shared_ptr<InspectionPipeline> pipeline);
+    RealtimeRuntime(
+        RuntimeConfig config,
+        std::shared_ptr<InspectionPipeline> pipeline,
+        std::shared_ptr<LineSafetyController> safety = nullptr);
     ~RealtimeRuntime();
 
     RealtimeRuntime(const RealtimeRuntime&) = delete;
@@ -48,6 +52,10 @@ private:
     void publish_sorted_results(std::vector<InspectionResult> results);
     void enqueue_sort_result(InspectionResult result);
     void submit_packet(FramePacket packet);
+    void run_guarded(const std::string& source, const std::function<void()>& body);
+    void report_fault(RuntimeFault fault);
+    void stop_from_fault();
+    bool fault_latched() const;
     bool wait_until_ready(const std::filesystem::path& path) const;
     const CameraConfig* find_camera(int camera_id) const;
     bool should_accept_extension(const std::filesystem::path& path) const;
@@ -56,6 +64,7 @@ private:
 
     RuntimeConfig config_;
     std::shared_ptr<InspectionPipeline> pipeline_;
+    std::shared_ptr<LineSafetyController> safety_;
 
     mutable std::mutex mutex_;
     std::mutex flow_mutex_;

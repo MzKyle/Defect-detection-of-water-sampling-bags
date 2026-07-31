@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -154,6 +155,9 @@ AppConfig load_app_config(const std::filesystem::path& path) {
         config.runtime.expected_burst_images_per_camera);
     config.runtime.bag_capture_timeout = ini.get_ms("runtime", "bag_capture_timeout_ms", config.runtime.bag_capture_timeout);
     config.runtime.sort_result_timeout = ini.get_ms("runtime", "sort_result_timeout_ms", config.runtime.sort_result_timeout);
+    config.runtime.heartbeat_interval = ini.get_ms("runtime", "heartbeat_interval_ms", config.runtime.heartbeat_interval);
+    config.runtime.heartbeat_failure_threshold = ini.get_int("runtime", "heartbeat_failure_threshold", config.runtime.heartbeat_failure_threshold);
+    config.runtime.presence_checkpoint_path = ini.get("runtime", "presence_checkpoint", config.runtime.presence_checkpoint_path.string());
 
     config.camera_driver.backend = lower_copy(ini.get("camera_driver", "backend", config.camera_driver.backend));
     config.camera_driver.output_dir = ini.get("camera_driver", "output_dir", config.camera_driver.output_dir.string());
@@ -240,6 +244,7 @@ AppConfig load_app_config(const std::filesystem::path& path) {
     config.plc.mock_fail_first_attempts = ini.get_int("plc", "mock_fail_first_attempts", config.plc.mock_fail_first_attempts);
     config.plc.mock_ack_latency = ini.get_ms("plc", "mock_ack_latency_ms", config.plc.mock_ack_latency);
     config.plc.mock_presence_latency = ini.get_ms("plc", "mock_presence_latency_ms", config.plc.mock_presence_latency);
+    config.plc.presence_checkpoint_path = ini.get("plc", "presence_checkpoint", config.runtime.presence_checkpoint_path.string());
     config.plc.modbus_tcp.host = ini.get("plc.modbus_tcp", "host", config.plc.modbus_tcp.host);
     config.plc.modbus_tcp.port = ini.get_int("plc.modbus_tcp", "port", config.plc.modbus_tcp.port);
     config.plc.modbus_tcp.unit_id = ini.get_int("plc.modbus_tcp", "unit_id", config.plc.modbus_tcp.unit_id);
@@ -307,6 +312,7 @@ AppConfig load_app_config(const std::filesystem::path& path) {
     config.plc.modbus_tcp.coil_sort_ok = ini.get_int("plc.modbus_tcp", "coil_sort_ok", config.plc.modbus_tcp.coil_sort_ok);
     config.plc.modbus_tcp.coil_sort_ng = ini.get_int("plc.modbus_tcp", "coil_sort_ng", config.plc.modbus_tcp.coil_sort_ng);
     config.plc.modbus_tcp.coil_heartbeat = ini.get_int("plc.modbus_tcp", "coil_heartbeat", config.plc.modbus_tcp.coil_heartbeat);
+    config.plc.modbus_tcp.coil_line_stop = ini.get_int("plc.modbus_tcp", "coil_line_stop", config.plc.modbus_tcp.coil_line_stop);
     config.plc.modbus_tcp.ack_idle_value = ini.get_int("plc.modbus_tcp", "ack_idle_value", config.plc.modbus_tcp.ack_idle_value);
     config.plc.modbus_tcp.ack_success_value = ini.get_int("plc.modbus_tcp", "ack_success_value", config.plc.modbus_tcp.ack_success_value);
     config.plc.modbus_tcp.ack_failure_value = ini.get_int("plc.modbus_tcp", "ack_failure_value", config.plc.modbus_tcp.ack_failure_value);
@@ -337,6 +343,101 @@ AppConfig load_app_config(const std::filesystem::path& path) {
     config.runtime.plc_backend = config.plc.backend;
 
     return config;
+}
+
+std::vector<std::string> validate_app_config(const AppConfig& config) {
+    std::vector<std::string> errors;
+    auto require_positive_ms = [&](const char* name, Milliseconds value) {
+        if (value.count() <= 0) {
+            errors.push_back(std::string(name) + " must be positive");
+        }
+    };
+    if (config.runtime.queue_capacity == 0) {
+        errors.push_back("runtime.queue_capacity must be non-zero");
+    }
+    if (config.runtime.defect_worker_count == 0) {
+        errors.push_back("runtime.defect_worker_count must be non-zero");
+    }
+    require_positive_ms("runtime.poll_interval_ms", config.runtime.poll_interval);
+    require_positive_ms("runtime.file_ready_timeout_ms", config.runtime.file_ready_timeout);
+    require_positive_ms("runtime.file_stable_ms", config.runtime.file_stable_for);
+    require_positive_ms("runtime.cooldown_ms", config.runtime.cooldown);
+    require_positive_ms("runtime.bag_capture_timeout_ms", config.runtime.bag_capture_timeout);
+    require_positive_ms("runtime.sort_result_timeout_ms", config.runtime.sort_result_timeout);
+    require_positive_ms("runtime.heartbeat_interval_ms", config.runtime.heartbeat_interval);
+    if (config.runtime.heartbeat_failure_threshold <= 0) {
+        errors.push_back("runtime.heartbeat_failure_threshold must be positive");
+    }
+    if (config.runtime.input_mode != "watch_dir" && config.runtime.input_mode != "plc_presence") {
+        errors.push_back("runtime.input_mode must be watch_dir or plc_presence");
+    }
+    if (config.camera_driver.backend != "mock" &&
+        config.camera_driver.backend != "hikvision_mvs" &&
+        config.camera_driver.backend != "hik" &&
+        config.camera_driver.backend != "mvs") {
+        errors.push_back("camera_driver.backend is unsupported: " + config.camera_driver.backend);
+    }
+    if (config.plc.backend != "mock" &&
+        config.plc.backend != "modbus_tcp" &&
+        config.plc.backend != "modbus") {
+        errors.push_back("plc.backend is unsupported: " + config.plc.backend);
+    }
+    if (config.detection.primary_conf_threshold < 0.0 || config.detection.primary_conf_threshold > 1.0) {
+        errors.push_back("detection.primary_conf_threshold must be in [0,1]");
+    }
+    if (config.detection.patch_conf_threshold < 0.0 || config.detection.patch_conf_threshold > 1.0) {
+        errors.push_back("detection.patch_conf_threshold must be in [0,1]");
+    }
+
+    std::set<int> camera_ids;
+    for (const auto& camera : config.runtime.cameras) {
+        if (camera.id <= 0) {
+            errors.push_back("camera id must be positive: " + std::to_string(camera.id));
+        }
+        if (!camera_ids.insert(camera.id).second) {
+            errors.push_back("camera id must be unique: " + std::to_string(camera.id));
+        }
+    }
+    const std::set<int> correlation_ids(config.correlation.expected_camera_ids.begin(), config.correlation.expected_camera_ids.end());
+    if (camera_ids != correlation_ids) {
+        errors.push_back("configured camera ids must match correlation.expected_camera_ids");
+    }
+
+    if (config.runtime.input_mode == "plc_presence") {
+        if (config.plc.backend != "modbus_tcp" && config.plc.backend != "modbus") {
+            errors.push_back("runtime.input_mode=plc_presence requires plc.backend=modbus_tcp");
+        }
+        if (config.plc.presence_checkpoint_path.empty()) {
+            errors.push_back("plc_presence requires plc.presence_checkpoint or runtime.presence_checkpoint");
+        }
+        if (config.plc.modbus_tcp.input_register_message_id < 0) {
+            errors.push_back("plc_presence requires input_register_message_id");
+        }
+        if (config.plc.modbus_tcp.input_register_bag_id_high < 0 || config.plc.modbus_tcp.input_register_bag_id_low < 0) {
+            errors.push_back("plc_presence requires bag id registers");
+        }
+        if (config.plc.modbus_tcp.coil_heartbeat < 0) {
+            errors.push_back("plc_presence requires coil_heartbeat");
+        }
+        if (config.plc.modbus_tcp.coil_line_stop < 0) {
+            errors.push_back("plc_presence requires coil_line_stop");
+        }
+    }
+
+    return errors;
+}
+
+void throw_if_invalid_app_config(const AppConfig& config) {
+    const auto errors = validate_app_config(config);
+    if (errors.empty()) {
+        return;
+    }
+    std::ostringstream message;
+    message << "invalid config:";
+    for (const auto& error : errors) {
+        message << "\n- " << error;
+    }
+    throw std::runtime_error(message.str());
 }
 
 }  // namespace waterbag

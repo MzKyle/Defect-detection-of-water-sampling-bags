@@ -31,6 +31,7 @@ endif()
 add_library(detect_orchestrator_common
     detect_orchestrator/src/config.cpp
     detect_orchestrator/src/hardware_clock.cpp
+    detect_orchestrator/src/line_safety.cpp
     detect_orchestrator/src/logger.cpp
     detect_orchestrator/src/schemas.cpp
     detect_orchestrator/src/storage.cpp

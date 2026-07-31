@@ -85,6 +85,9 @@ std::string status_from_action(const std::string& action, bool timed_out) {
     if (timed_out) {
         return "timeout";
     }
+    if (action == "fault" || action == "line_stop") {
+        return "fault";
+    }
     if (action == "reject") {
         return "defect";
     }
@@ -101,6 +104,74 @@ std::string status_from_action(const std::string& action, bool timed_out) {
         return "capture_invalid";
     }
     return "pending";
+}
+
+std::string to_string(RuntimeFaultCode code) {
+    switch (code) {
+        case RuntimeFaultCode::StationQueueSaturated:
+            return "station_queue_saturated";
+        case RuntimeFaultCode::DefectQueueSaturated:
+            return "defect_queue_saturated";
+        case RuntimeFaultCode::SortQueueSaturated:
+            return "sort_queue_saturated";
+        case RuntimeFaultCode::ThreadException:
+            return "thread_exception";
+        case RuntimeFaultCode::PlcCommunicationLost:
+            return "plc_communication_lost";
+        case RuntimeFaultCode::ResultStorageFailed:
+            return "result_storage_failed";
+        case RuntimeFaultCode::BagIdMissing:
+            return "bag_id_missing";
+        case RuntimeFaultCode::BagIdRegression:
+            return "bag_id_regression";
+        case RuntimeFaultCode::CheckpointFailed:
+            return "checkpoint_failed";
+        case RuntimeFaultCode::DeviceException:
+            return "device_exception";
+        case RuntimeFaultCode::ModelException:
+            return "model_exception";
+        case RuntimeFaultCode::FilesystemException:
+            return "filesystem_exception";
+    }
+    return "unknown_runtime_fault";
+}
+
+std::string to_string(RuntimeState state) {
+    switch (state) {
+        case RuntimeState::Starting:
+            return "starting";
+        case RuntimeState::Running:
+            return "running";
+        case RuntimeState::FaultLatched:
+            return "fault_latched";
+        case RuntimeState::Stopped:
+            return "stopped";
+    }
+    return "unknown";
+}
+
+InspectionResult make_runtime_fault_result(const RuntimeFault& fault) {
+    InspectionResult result;
+    result.runtime_fault = fault;
+    result.frame_packet.frame_id = fault.frame_id.value_or("runtime-fault");
+    result.frame_packet.bag_id = fault.bag_id.value_or("");
+    result.frame_packet.camera_name = fault.source;
+    result.frame_packet.source = "runtime_fault";
+    result.frame_packet.received_at = fault.occurred_at;
+    result.frame_packet.enqueued_at = fault.occurred_at;
+    result.frame_packet.metadata["runtime_fault.code"] = to_string(fault.code);
+    result.frame_packet.metadata["runtime_fault.source"] = fault.source;
+    result.frame_packet.metadata["runtime_fault.detail"] = fault.detail;
+    result.frame_packet.metadata["runtime_fault.line_stop_confirmed"] = fault.line_stop_confirmed ? "true" : "false";
+    result.decision_result.finalized = true;
+    result.decision_result.control_action = "fault";
+    result.decision_result.reason = to_string(fault.code);
+    result.bag_summary.bag_id = result.frame_packet.bag_id;
+    result.bag_summary.finalized = true;
+    result.bag_summary.aggregate_action = "fault";
+    result.bag_summary.aggregate_reason = to_string(fault.code);
+    result.state_trace.push_back("runtime_fault:" + to_string(fault.code) + ":" + fault.detail);
+    return result;
 }
 
 std::string system_time_to_iso(SystemClock::time_point value) {

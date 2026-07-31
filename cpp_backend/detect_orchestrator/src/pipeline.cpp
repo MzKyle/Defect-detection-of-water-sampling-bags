@@ -286,6 +286,23 @@ InspectionResult InspectionPipeline::process_station_packet(FramePacket packet) 
             ":valid=" + (presence.message_valid ? "true" : "false") +
             ":timeout=" + (presence.timed_out ? "true" : "false") +
             ":" + presence.detail);
+
+        if (!presence.message_valid &&
+            (presence.detail.find("bag_id_missing") != std::string::npos ||
+             presence.detail.find("bag_id_regression") != std::string::npos ||
+             presence.detail.find("checkpoint_failed") != std::string::npos)) {
+            RuntimeFault fault;
+            fault.code = presence.detail.find("bag_id_missing") != std::string::npos
+                ? RuntimeFaultCode::BagIdMissing
+                : (presence.detail.find("bag_id_regression") != std::string::npos
+                    ? RuntimeFaultCode::BagIdRegression
+                    : RuntimeFaultCode::CheckpointFailed);
+            fault.source = "plc_presence";
+            fault.detail = presence.detail;
+            fault.frame_id = packet.frame_id;
+            fault.bag_id = packet.bag_id;
+            throw RuntimeFaultException(std::move(fault));
+        }
     }
 
     if (detection_config_.presence_enabled && !result.presence_result.is_defect()) {
