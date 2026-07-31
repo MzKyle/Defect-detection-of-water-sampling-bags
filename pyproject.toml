@@ -10,11 +10,37 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "Flask>=3.0.0",
-  "ultralytics>=8.3.0",
-  "torch>=2.2.0",
-  "Pillow>=10.3.0",
+]
+
+[project.optional-dependencies]
+model = [
   "numpy>=1.26.0",
+  "Pillow>=10.3.0",
+  "torch>=2.2.0",
+  "ultralytics>=8.3.0",
+]
+training = [
+  "gitpython>=3.1.0",
+  "matplotlib>=3.8.0",
+  "numpy>=1.26.0",
+  "pandas>=2.2.0",
+  "Pillow>=10.3.0",
+  "psutil>=5.9.0",
+  "requests>=2.31.0",
+  "scipy>=1.12.0",
+  "seaborn>=0.13.0",
+  "thop>=0.1.1",
+  "torch>=2.2.0",
+  "torchvision>=0.17.0",
+  "tqdm>=4.66.0",
+  "ultralytics>=8.3.0",
 ]
 
 [project.scripts]
 waterbag-inspection = "waterbag_inspection.cli:main"
+
+[tool.setuptools]
+packages = ["waterbag_inspection", "waterbag_inspection.templates"]
+
+[tool.setuptools.package-data]
+waterbag_inspection = ["templates/*.html"]

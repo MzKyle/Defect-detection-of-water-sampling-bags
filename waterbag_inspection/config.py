@@ -62,9 +62,16 @@ def load_settings(config_path: str | None = None) -> DashboardSettings:
     )
     if not source.is_absolute():
         source = (ROOT_DIR / source).resolve()
+    if not source.exists() or not source.is_file():
+        raise FileNotFoundError(
+            "C++ dashboard config not found. Pass --config, set WATERBAG_CPP_CONFIG, "
+            f"or restore the default config at {DEFAULT_CPP_CONFIG}."
+        )
 
     parser = configparser.ConfigParser()
-    parser.read(source, encoding="utf-8")
+    read_files = parser.read(source, encoding="utf-8")
+    if not read_files:
+        raise ValueError(f"C++ dashboard config could not be read: {source}")
 
     app = AppConfig(
         name=os.getenv("WATERBAG_DASHBOARD_NAME", "Waterbag Inspection Dashboard"),
@@ -87,10 +94,7 @@ def load_settings(config_path: str | None = None) -> DashboardSettings:
             )
         )
     if not cameras:
-        cameras = [
-            CameraConfig(1, "A-camera", _resolve_path("demo_data/camera1")),
-            CameraConfig(2, "B-camera", _resolve_path("demo_data/camera2")),
-        ]
+        raise ValueError(f"C++ dashboard config has no valid camera sections: {source}")
 
     result_jsonl = _resolve_path(
         parser.get("storage", "result_jsonl", fallback="artifacts/cpp_backend/results.jsonl")

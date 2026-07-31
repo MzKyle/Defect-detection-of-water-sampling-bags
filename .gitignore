@@ -5,6 +5,8 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .history/
+*.egg-info/
+dist/
 
 # 数据集（关键：忽略原始数据）
 datasets/

@@ -11,7 +11,7 @@ from .storage import SQLiteDetectionRepository
 
 
 def create_web_app(settings: DashboardSettings, repository: SQLiteDetectionRepository) -> Flask:
-    app = Flask(__name__, template_folder=str(Path(__file__).resolve().parent.parent / "templates"))
+    app = Flask(__name__)
 
     @app.route("/")
     def index():
