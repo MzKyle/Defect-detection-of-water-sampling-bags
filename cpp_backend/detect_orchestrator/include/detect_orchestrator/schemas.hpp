@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -55,6 +56,9 @@ struct RuntimeConfig {
     std::size_t expected_burst_images_per_camera = 3;
     Milliseconds bag_capture_timeout{1500};
     Milliseconds sort_result_timeout{1500};
+    Milliseconds heartbeat_interval{500};
+    int heartbeat_failure_threshold = 3;
+    std::filesystem::path presence_checkpoint_path;
 };
 
 struct DetectionConfig {
@@ -106,6 +110,7 @@ struct ModbusTcpConfig {
     int coil_sort_ok = 10;
     int coil_sort_ng = 11;
     int coil_heartbeat = 20;
+    int coil_line_stop = 21;
     int ack_idle_value = 0;
     int ack_success_value = 1;
     int ack_failure_value = 2;
@@ -123,6 +128,7 @@ struct PlcConfig {
     int mock_fail_first_attempts = 0;
     Milliseconds mock_ack_latency{0};
     Milliseconds mock_presence_latency{0};
+    std::filesystem::path presence_checkpoint_path;
     ModbusTcpConfig modbus_tcp;
 };
 
@@ -139,6 +145,28 @@ enum class DetectionStage {
     Presence,
     Stage1,
     Stage2
+};
+
+enum class RuntimeFaultCode {
+    StationQueueSaturated,
+    DefectQueueSaturated,
+    SortQueueSaturated,
+    ThreadException,
+    PlcCommunicationLost,
+    ResultStorageFailed,
+    BagIdMissing,
+    BagIdRegression,
+    CheckpointFailed,
+    DeviceException,
+    ModelException,
+    FilesystemException
+};
+
+enum class RuntimeState {
+    Starting,
+    Running,
+    FaultLatched,
+    Stopped
 };
 
 inline std::string to_string(DetectionStage stage) {
@@ -211,6 +239,29 @@ struct ExecutionFeedback {
     std::vector<std::string> attempt_details;
 };
 
+struct RuntimeFault {
+    RuntimeFaultCode code = RuntimeFaultCode::ThreadException;
+    std::string source;
+    std::string detail;
+    SystemClock::time_point occurred_at = SystemClock::now();
+    std::optional<std::string> frame_id;
+    std::optional<std::string> bag_id;
+    bool line_stop_confirmed = false;
+};
+
+class RuntimeFaultException final : public std::runtime_error {
+public:
+    explicit RuntimeFaultException(RuntimeFault fault)
+        : std::runtime_error(fault.detail), fault_(std::move(fault)) {}
+
+    const RuntimeFault& fault() const {
+        return fault_;
+    }
+
+private:
+    RuntimeFault fault_;
+};
+
 struct CameraObservation {
     int camera_id = 0;
     std::string camera_name;
@@ -264,6 +315,7 @@ struct InspectionResult {
     std::vector<ExecutionFeedback> execution_feedbacks;
     TimingBreakdown timing;
     std::vector<std::string> state_trace;
+    std::optional<RuntimeFault> runtime_fault;
 };
 
 inline double elapsed_ms(Clock::time_point started) {
@@ -287,5 +339,8 @@ FramePacket make_synthetic_frame_packet(const CameraConfig& camera, const std::s
 std::string make_command_id();
 std::string status_from_action(const std::string& action, bool timed_out);
 std::string system_time_to_iso(SystemClock::time_point value);
+std::string to_string(RuntimeFaultCode code);
+std::string to_string(RuntimeState state);
+InspectionResult make_runtime_fault_result(const RuntimeFault& fault);
 
 }  // namespace waterbag

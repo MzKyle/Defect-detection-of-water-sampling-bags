@@ -25,14 +25,24 @@ std::vector<int> camera_ids_from_config(const RuntimeConfig& config) {
 
 }  // namespace
 
-RealtimeRuntime::RealtimeRuntime(RuntimeConfig config, std::shared_ptr<InspectionPipeline> pipeline)
+RealtimeRuntime::RealtimeRuntime(
+    RuntimeConfig config,
+    std::shared_ptr<InspectionPipeline> pipeline,
+    std::shared_ptr<LineSafetyController> safety)
     : config_(std::move(config)),
       pipeline_(std::move(pipeline)),
+      safety_(std::move(safety)),
       capture_assembler_(
           camera_ids_from_config(config_),
           config_.expected_burst_images_per_camera,
           config_.bag_capture_timeout),
-      sort_reorder_(config_.sort_result_timeout) {}
+      sort_reorder_(config_.sort_result_timeout) {
+    if (safety_) {
+        safety_->set_fault_callback([this](const RuntimeFault&) {
+            stop_from_fault();
+        });
+    }
+}
 
 RealtimeRuntime::~RealtimeRuntime() {
     stop();
@@ -72,11 +82,23 @@ void RealtimeRuntime::start() {
         defect_workers_.push_back(std::make_unique<DefectWorkerShard>());
     }
 
-    poll_thread_ = std::thread(&RealtimeRuntime::poll_loop, this);
-    worker_thread_ = std::thread(&RealtimeRuntime::worker_loop, this);
-    sorter_thread_ = std::thread(&RealtimeRuntime::sorter_loop, this);
+    if (safety_) {
+        safety_->start();
+    }
+
+    poll_thread_ = std::thread([this] {
+        run_guarded("poll_thread", [this] { poll_loop(); });
+    });
+    worker_thread_ = std::thread([this] {
+        run_guarded("station_thread", [this] { worker_loop(); });
+    });
+    sorter_thread_ = std::thread([this] {
+        run_guarded("sorter_thread", [this] { sorter_loop(); });
+    });
     for (std::size_t i = 0; i < worker_count; ++i) {
-        defect_threads_.emplace_back(&RealtimeRuntime::defect_worker_loop, this, i);
+        defect_threads_.emplace_back([this, i] {
+            run_guarded("defect_thread_" + std::to_string(i), [this, i] { defect_worker_loop(i); });
+        });
     }
     Logger::instance().info("defect worker pool started, count=" + std::to_string(worker_count));
 }
@@ -113,6 +135,9 @@ void RealtimeRuntime::stop() {
     if (sorter_thread_.joinable()) {
         sorter_thread_.join();
     }
+    if (safety_) {
+        safety_->stop();
+    }
     defect_threads_.clear();
     defect_workers_.clear();
 }
@@ -131,30 +156,58 @@ void RealtimeRuntime::submit_path(int camera_id, const std::filesystem::path& pa
 }
 
 void RealtimeRuntime::submit_packet(FramePacket packet) {
+    bool overflow = false;
+    RuntimeFault fault;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (queue_.size() >= config_.queue_capacity) {
-            queue_.pop_front();
+        if (stop_requested_ || fault_latched()) {
+            return;
         }
-        queue_.push_back(std::move(packet));
+        if (queue_.size() >= config_.queue_capacity) {
+            overflow = true;
+            fault.code = RuntimeFaultCode::StationQueueSaturated;
+            fault.source = "station_queue";
+            fault.detail = "station queue saturated at capacity=" + std::to_string(config_.queue_capacity);
+            fault.frame_id = packet.frame_id;
+            fault.bag_id = packet.bag_id;
+        } else {
+            queue_.push_back(std::move(packet));
+        }
+    }
+    if (overflow) {
+        report_fault(std::move(fault));
+        return;
     }
     cv_.notify_one();
 }
 
 void RealtimeRuntime::submit_defect_packet(FramePacket packet) {
-    const auto worker_index = defect_worker_index_for_bag(packet.bag_id);
     DefectWorkerShard* worker = nullptr;
+    bool overflow = false;
+    RuntimeFault fault;
+    std::size_t worker_index = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (defect_workers_.empty()) {
+        if (stop_requested_ || fault_latched() || defect_workers_.empty()) {
             return;
         }
+        worker_index = std::hash<std::string>{}(packet.bag_id) % defect_workers_.size();
         worker = defect_workers_[worker_index].get();
         if (worker->queue.size() >= config_.queue_capacity) {
-            worker->queue.pop_front();
+            overflow = true;
+            fault.code = RuntimeFaultCode::DefectQueueSaturated;
+            fault.source = "defect_queue";
+            fault.detail = "defect queue saturated at capacity=" + std::to_string(config_.queue_capacity);
+            fault.frame_id = packet.frame_id;
+            fault.bag_id = packet.bag_id;
+        } else {
+            packet.metadata["defect_worker_index"] = std::to_string(worker_index);
+            worker->queue.push_back(std::move(packet));
         }
-        packet.metadata["defect_worker_index"] = std::to_string(worker_index);
-        worker->queue.push_back(std::move(packet));
+    }
+    if (overflow) {
+        report_fault(std::move(fault));
+        return;
     }
     worker->cv.notify_one();
 }
@@ -173,7 +226,7 @@ void RealtimeRuntime::poll_loop() {
     while (true) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (stop_requested_) {
+            if (stop_requested_ || fault_latched()) {
                 break;
             }
         }
@@ -368,15 +421,77 @@ void RealtimeRuntime::publish_sorted_results(std::vector<InspectionResult> resul
 }
 
 void RealtimeRuntime::enqueue_sort_result(InspectionResult result) {
+    bool overflow = false;
+    RuntimeFault fault;
     {
         std::lock_guard<std::mutex> lock(sort_mutex_);
-        if (sort_queue_.size() >= config_.queue_capacity) {
-            sort_queue_.pop_front();
-            result.state_trace.push_back("sort_queue_dropped_oldest");
+        if (sort_stop_requested_ || fault_latched()) {
+            return;
         }
-        sort_queue_.push_back(std::move(result));
+        if (sort_queue_.size() >= config_.queue_capacity) {
+            overflow = true;
+            fault.code = RuntimeFaultCode::SortQueueSaturated;
+            fault.source = "sort_queue";
+            fault.detail = "sort queue saturated at capacity=" + std::to_string(config_.queue_capacity);
+            fault.frame_id = result.frame_packet.frame_id;
+            fault.bag_id = result.frame_packet.bag_id;
+        } else {
+            sort_queue_.push_back(std::move(result));
+        }
+    }
+    if (overflow) {
+        report_fault(std::move(fault));
+        return;
     }
     sort_cv_.notify_one();
+}
+
+void RealtimeRuntime::run_guarded(const std::string& source, const std::function<void()>& body) {
+    try {
+        body();
+    } catch (const RuntimeFaultException& error) {
+        report_fault(error.fault());
+    } catch (const std::exception& error) {
+        RuntimeFault fault;
+        fault.code = RuntimeFaultCode::ThreadException;
+        fault.source = source;
+        fault.detail = error.what();
+        report_fault(std::move(fault));
+    } catch (...) {
+        RuntimeFault fault;
+        fault.code = RuntimeFaultCode::ThreadException;
+        fault.source = source;
+        fault.detail = "unknown exception";
+        report_fault(std::move(fault));
+    }
+}
+
+void RealtimeRuntime::report_fault(RuntimeFault fault) {
+    Logger::instance().error("runtime fault " + to_string(fault.code) + " source=" + fault.source + " detail=" + fault.detail);
+    if (safety_) {
+        safety_->trip(std::move(fault));
+    }
+    stop_from_fault();
+}
+
+void RealtimeRuntime::stop_from_fault() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stop_requested_ = true;
+    }
+    cv_.notify_all();
+    for (auto& worker : defect_workers_) {
+        worker->cv.notify_all();
+    }
+    {
+        std::lock_guard<std::mutex> lock(sort_mutex_);
+        sort_stop_requested_ = true;
+    }
+    sort_cv_.notify_all();
+}
+
+bool RealtimeRuntime::fault_latched() const {
+    return safety_ && safety_->fault_latched();
 }
 
 std::size_t RealtimeRuntime::defect_worker_index_for_bag(const std::string& bag_id) const {
@@ -439,7 +554,27 @@ void RealtimeRuntime::publish(const InspectionResult& result) {
         listeners = listeners_;
     }
     for (const auto& listener : listeners) {
-        listener(result);
+        try {
+            listener(result);
+        } catch (const std::exception& error) {
+            RuntimeFault fault;
+            fault.code = RuntimeFaultCode::ResultStorageFailed;
+            fault.source = "result_listener";
+            fault.detail = error.what();
+            fault.frame_id = result.frame_packet.frame_id;
+            fault.bag_id = result.frame_packet.bag_id;
+            report_fault(std::move(fault));
+            break;
+        } catch (...) {
+            RuntimeFault fault;
+            fault.code = RuntimeFaultCode::ResultStorageFailed;
+            fault.source = "result_listener";
+            fault.detail = "unknown listener exception";
+            fault.frame_id = result.frame_packet.frame_id;
+            fault.bag_id = result.frame_packet.bag_id;
+            report_fault(std::move(fault));
+            break;
+        }
     }
 }
 

@@ -67,5 +67,7 @@ private:
 };
 
 AppConfig load_app_config(const std::filesystem::path& path);
+std::vector<std::string> validate_app_config(const AppConfig& config);
+void throw_if_invalid_app_config(const AppConfig& config);
 
 }  // namespace waterbag

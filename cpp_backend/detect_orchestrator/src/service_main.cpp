@@ -15,6 +15,7 @@
 #include "detect_orchestrator/config.hpp"
 #include "detect_orchestrator/detector.hpp"
 #include "detect_orchestrator/logger.hpp"
+#include "detect_orchestrator/line_safety.hpp"
 #include "detect_orchestrator/pipeline.hpp"
 #include "detect_orchestrator/runtime.hpp"
 #include "detect_orchestrator/storage.hpp"
@@ -96,11 +97,15 @@ void save_and_log(waterbag::JsonlResultRepository& repository, const waterbag::I
         " latency_ms=" + std::to_string(result.timing.total_ms));
 }
 
-std::shared_ptr<waterbag::InspectionPipeline> build_pipeline(const waterbag::AppConfig& config) {
+std::shared_ptr<waterbag::InspectionPipeline> build_pipeline(
+    const waterbag::AppConfig& config,
+    std::shared_ptr<waterbag::IPlcController> plc = nullptr) {
     auto primary_detector = waterbag::make_detector(config.detectors.primary, "mock-primary");
     auto patch_detector = waterbag::make_detector(config.detectors.patch, "mock-patch");
     auto burst_capture = make_burst_capture(config);
-    auto plc = make_plc_controller(config);
+    if (!plc) {
+        plc = make_plc_controller(config);
+    }
     burst_capture->start();
 
     return std::make_shared<waterbag::InspectionPipeline>(
@@ -290,6 +295,7 @@ int main(int argc, char** argv) {
         if (defect_worker_override > 0) {
             config.runtime.defect_worker_count = defect_worker_override;
         }
+        waterbag::throw_if_invalid_app_config(config);
         waterbag::Logger::instance().configure(config.logger);
         waterbag::Logger::instance().info("loaded config: " + config_path.string());
         waterbag::Logger::instance().info("defect_worker_count=" + std::to_string(config.runtime.defect_worker_count));
@@ -301,39 +307,58 @@ int main(int argc, char** argv) {
             return run_hardware_check(config);
         }
 
-        waterbag::JsonlResultRepository repository(
+        auto repository = std::make_shared<waterbag::JsonlResultRepository>(
             config.storage.result_jsonl,
             config.storage.async_result_writes,
             config.storage.result_queue_capacity,
             config.storage.drop_results_when_full);
-        auto pipeline = build_pipeline(config);
 
         if (once || !watch) {
-            const int processed = run_once(config, *pipeline, repository);
+            auto pipeline = build_pipeline(config);
+            const int processed = run_once(config, *pipeline, *repository);
+            repository->close();
             waterbag::Logger::instance().info("once mode completed, events=" + std::to_string(processed));
             return 0;
         }
 
+        auto plc = make_plc_controller(config);
+        auto pipeline = build_pipeline(config, plc);
+        waterbag::LineSafetyOptions safety_options;
+        safety_options.heartbeat_interval = config.runtime.heartbeat_interval;
+        safety_options.heartbeat_failure_threshold = config.runtime.heartbeat_failure_threshold;
+        auto safety = std::make_shared<waterbag::LineSafetyController>(plc, repository, safety_options);
+
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
 
-        waterbag::RealtimeRuntime runtime(config.runtime, pipeline);
-        runtime.add_listener([&repository](const waterbag::InspectionResult& result) {
-            save_and_log(repository, result);
+        waterbag::RealtimeRuntime runtime(config.runtime, pipeline, safety);
+        runtime.add_listener([repository](const waterbag::InspectionResult& result) {
+            save_and_log(*repository, result);
         });
 
         runtime.start();
         waterbag::Logger::instance().info("watch mode started");
         const auto started = waterbag::Clock::now();
         while (!g_stop_requested) {
+            if (safety->fault_latched()) {
+                break;
+            }
             if (config.service.run_for.count() > 0 && waterbag::Clock::now() - started >= config.service.run_for) {
                 break;
             }
             std::this_thread::sleep_for(waterbag::Milliseconds{100});
         }
+        if (g_stop_requested && config.runtime.input_mode == "plc_presence" && !safety->fault_latched()) {
+            waterbag::RuntimeFault fault;
+            fault.code = waterbag::RuntimeFaultCode::DeviceException;
+            fault.source = "signal";
+            fault.detail = "SIGINT/SIGTERM requested production line stop";
+            safety->trip(std::move(fault));
+        }
         runtime.stop();
+        repository->close();
         waterbag::Logger::instance().info("watch mode stopped");
-        return 0;
+        return safety->fault_latched() ? 3 : 0;
     } catch (const std::exception& error) {
         std::cerr << "waterbag_cpp_service failed: " << error.what() << "\n";
         return 1;

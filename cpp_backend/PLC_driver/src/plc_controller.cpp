@@ -93,6 +93,7 @@ PlcLaserPresence MockSemanticPlcController::read_laser_presence(const FramePacke
 }
 
 PlcAck MockSemanticPlcController::start_light_burst(const CaptureSession& session, const BurstPlan& plan) {
+    std::lock_guard<std::mutex> lock(mutex_);
     const auto started = Clock::now();
     const auto base_time = SystemClock::now();
     const auto base_hw_ns = session.burst_start_hw.ns > 0 ? session.burst_start_hw.ns : UnifiedHardwareClock::now_ns();
@@ -125,6 +126,7 @@ PlcAck MockSemanticPlcController::start_light_burst(const CaptureSession& sessio
 }
 
 std::vector<PlcBurstEvent> MockSemanticPlcController::read_burst_events(const std::string& capture_session_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
     const auto found = burst_events_.find(capture_session_id);
     if (found == burst_events_.end()) {
         return {};
@@ -133,6 +135,7 @@ std::vector<PlcBurstEvent> MockSemanticPlcController::read_burst_events(const st
 }
 
 std::vector<ExecutionFeedback> MockSemanticPlcController::release_station_after_capture(const CaptureSession& session) {
+    std::lock_guard<std::mutex> lock(mutex_);
     const auto& packet = session.packet;
     const auto station = "camera" + std::to_string(session.camera_id);
     std::vector<ExecutionFeedback> feedbacks;
@@ -144,11 +147,27 @@ std::vector<ExecutionFeedback> MockSemanticPlcController::release_station_after_
 }
 
 ExecutionFeedback MockSemanticPlcController::route_to_ok_bin(const FramePacket& packet) {
+    std::lock_guard<std::mutex> lock(mutex_);
     return execute_semantic_command(packet, "end_sorter", "route_to_ok_bin");
 }
 
 ExecutionFeedback MockSemanticPlcController::route_to_ng_bin(const FramePacket& packet) {
+    std::lock_guard<std::mutex> lock(mutex_);
     return execute_semantic_command(packet, "end_sorter", "route_to_ng_bin");
+}
+
+bool MockSemanticPlcController::send_heartbeat() {
+    return true;
+}
+
+ExecutionFeedback MockSemanticPlcController::request_line_stop(const RuntimeFault& fault) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    FramePacket packet;
+    packet.frame_id = fault.frame_id.value_or("runtime-fault");
+    packet.bag_id = fault.bag_id.value_or("");
+    packet.source = "line_safety";
+    packet.source_name = fault.source;
+    return execute_semantic_command(packet, "line_safety", "request_line_stop");
 }
 
 ExecutionFeedback MockSemanticPlcController::execute_semantic_command(

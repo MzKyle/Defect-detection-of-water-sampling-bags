@@ -14,6 +14,7 @@ STATUS_TEXT = {
     "captured": "已采图",
     "no_bag": "无袋",
     "capture_invalid": "采图异常",
+    "fault": "安全故障",
     "pending": "等待",
 }
 
@@ -24,6 +25,7 @@ STATUS_ICON = {
     "captured": "●",
     "no_bag": "○",
     "capture_invalid": "!",
+    "fault": "!",
     "pending": "…",
     "warning": "!",
     "failure": "✕",
@@ -103,7 +105,7 @@ def _fault_signals(row: sqlite3.Row | dict[str, Any]) -> list[str]:
 
 def _status_family(status_code: str, signals: Iterable[str] = ()) -> str:
     signal_set = set(signals)
-    if status_code in {"defect", "timeout", "capture_invalid"} or "plc_failure" in signal_set:
+    if status_code in {"defect", "timeout", "capture_invalid", "fault"} or "plc_failure" in signal_set:
         return "danger"
     if status_code == "ok":
         return "ok"
@@ -152,6 +154,15 @@ def _reason_text(reason: str) -> str:
         "plc_laser_no_bag": "PLC 未检测到袋体",
         "burst_sync_or_jitter_invalid": "多光源采图同步或抖动异常",
         "sort_result_timeout_fail_safe_ng": "顺序分拣等待超时，故障保护 NG",
+        "station_queue_saturated": "工位队列满，已停线",
+        "defect_queue_saturated": "缺陷队列满，已停线",
+        "sort_queue_saturated": "分拣队列满，已停线",
+        "thread_exception": "关键线程异常，已停线",
+        "plc_communication_lost": "PLC 心跳失联，已停线",
+        "result_storage_failed": "结果审计写入失败，已停线",
+        "bag_id_missing": "PLC BagID 缺失，已停线",
+        "bag_id_regression": "PLC BagID 回退，已停线",
+        "checkpoint_failed": "Presence checkpoint 失败，已停线",
     }.get(reason, reason or "--")
 
 

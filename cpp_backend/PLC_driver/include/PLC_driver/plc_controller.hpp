@@ -59,6 +59,8 @@ public:
     virtual std::vector<ExecutionFeedback> release_station_after_capture(const CaptureSession& session) = 0;
     virtual ExecutionFeedback route_to_ok_bin(const FramePacket& packet) = 0;
     virtual ExecutionFeedback route_to_ng_bin(const FramePacket& packet) = 0;
+    virtual bool send_heartbeat() = 0;
+    virtual ExecutionFeedback request_line_stop(const RuntimeFault& fault) = 0;
 };
 
 class MockSemanticPlcController final : public IPlcController {
@@ -73,6 +75,8 @@ public:
     std::vector<ExecutionFeedback> release_station_after_capture(const CaptureSession& session) override;
     ExecutionFeedback route_to_ok_bin(const FramePacket& packet) override;
     ExecutionFeedback route_to_ng_bin(const FramePacket& packet) override;
+    bool send_heartbeat() override;
+    ExecutionFeedback request_line_stop(const RuntimeFault& fault) override;
 
 private:
     ExecutionFeedback execute_semantic_command(const FramePacket& packet, const std::string& target, const std::string& action);
@@ -80,6 +84,7 @@ private:
     PlcConfig config_;
     ReliablePlcController reliable_;
     std::map<std::string, std::vector<PlcBurstEvent>> burst_events_;
+    mutable std::mutex mutex_;
 };
 
 class ModbusTcpPlcController final : public IPlcController {
@@ -94,17 +99,30 @@ public:
     std::vector<ExecutionFeedback> release_station_after_capture(const CaptureSession& session) override;
     ExecutionFeedback route_to_ok_bin(const FramePacket& packet) override;
     ExecutionFeedback route_to_ng_bin(const FramePacket& packet) override;
+    bool send_heartbeat() override;
+    ExecutionFeedback request_line_stop(const RuntimeFault& fault) override;
 
 private:
+    struct PresenceCheckpoint {
+        std::string message_id;
+        std::uint64_t bag_id = 0;
+    };
+
     ExecutionFeedback execute_semantic_command(const FramePacket& packet, const std::string& target, const std::string& action);
     void write_burst_plan(const CaptureSession& session, const BurstPlan& plan);
     void store_planned_burst_events(const CaptureSession& session, const BurstPlan& plan);
+    void load_presence_checkpoint();
+    void persist_presence_checkpoint();
+    bool validate_and_checkpoint_presence(PlcLaserPresence& signal);
 
     PlcConfig config_;
     ReliablePlcController reliable_;
     std::map<std::string, std::vector<PlcBurstEvent>> burst_events_;
     std::mutex presence_mutex_;
     std::map<int, std::string> last_presence_key_by_camera_;
+    std::map<int, PresenceCheckpoint> checkpoint_by_camera_;
+    std::string checkpoint_load_error_;
+    mutable std::mutex command_mutex_;
 };
 
 std::vector<FrameLightAlignment> align_camera_and_plc_events(
